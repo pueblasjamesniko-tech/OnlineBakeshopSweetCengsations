@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 import 'login_screen.dart';
+import '../../../services/auth_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -157,7 +158,7 @@ class _HomeTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'What sweet treat\nare you craving?',
+                  'Order your favorites\nfresh from the oven!',
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 26,
@@ -167,29 +168,7 @@ class _HomeTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 18),
                 // Search bar
-                Container(
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.14),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.white.withOpacity(0.2)),
-                  ),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 14),
-                      Icon(Icons.search_rounded,
-                          color: Colors.white.withOpacity(0.6), size: 20),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Search for cakes, pastries...',
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.5),
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // no search bar because we cant
               ],
             ),
           ),
@@ -329,17 +308,24 @@ class _ProfileTab extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                const Text(
-                  'Unknown',
-                  style: TextStyle(
+
+                // ✅ Shows real name from login response
+                Text(
+                  AuthService.currentUser?['fullname'] ??
+                      AuthService.currentUser?['username'] ??
+                      AuthService.currentUser?['name'] ??
+                      'Unknown',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 22,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 const SizedBox(height: 4),
+
+                // ✅ Shows real email from login response
                 Text(
-                  'unknown@gmail.com',
+                  AuthService.currentUser?['email'] ?? 'No email',
                   style: TextStyle(
                       color: Colors.white.withOpacity(0.6), fontSize: 14),
                 ),
@@ -348,8 +334,6 @@ class _ProfileTab extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     _StatChip(label: 'Orders', value: '0'),
-                    const SizedBox(width: 12),
-                    _StatChip(label: 'Favourites', value: '0'),
                     const SizedBox(width: 12),
                     _StatChip(label: 'Points', value: '0'),
                   ],
@@ -366,24 +350,12 @@ class _ProfileTab extends StatelessWidget {
                     label: 'My Orders',
                     onTap: () {}),
                 _ProfileTile(
-                    icon: Icons.favorite_outline_rounded,
-                    label: 'Favourites',
-                    onTap: () {}),
-                _ProfileTile(
                     icon: Icons.location_on_outlined,
                     label: 'Delivery Addresses',
                     onTap: () {}),
                 _ProfileTile(
-                    icon: Icons.payment_outlined,
-                    label: 'Payment Methods',
-                    onTap: () {}),
-                _ProfileTile(
                     icon: Icons.notifications_outlined,
                     label: 'Notifications',
-                    onTap: () {}),
-                _ProfileTile(
-                    icon: Icons.help_outline_rounded,
-                    label: 'Help & Support',
                     onTap: () {}),
                 const SizedBox(height: 8),
                 _ProfileTile(

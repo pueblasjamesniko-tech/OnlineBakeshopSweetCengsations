@@ -4,6 +4,9 @@ import 'package:http/http.dart' as http;
 class AuthService {
   static const String baseUrl = 'http://10.26.228.192:5112';
 
+  // ✅ Stores the logged-in user's data globally
+  static Map<String, dynamic>? currentUser;
+
   // ── Login ─────────────────────────────────────────────────
   static Future<Map<String, dynamic>> loginUser({
     required String email,
@@ -11,7 +14,6 @@ class AuthService {
   }) async {
     try {
       final response = await http.post(
-        // Uri.parse('$baseUrl/login'),
         Uri.parse('$baseUrl/Login/UserLogin'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'email': email, 'password': password}),
@@ -19,19 +21,14 @@ class AuthService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
+        print('LOGIN RESPONSE: $data'); // temporary - remove later
         if (data['status'] == 200) {
+          currentUser = data['data']; // ✅ Save user data after login
           return {'success': true, 'data': data};
         }
         throw Exception('wrong password/login');
       }
       throw Exception('wrong password/login');
-      // else {
-      //   final error = jsonDecode(response.body);
-      //   return {
-      //     'success': false,
-      //     'message': error['message'] ?? 'Login failed. Please try again.',
-      //   };
-      // }
     } catch (e) {
       throw Exception(e);
     }
@@ -39,7 +36,7 @@ class AuthService {
 
   // ── Register ──────────────────────────────────────────────
   static Future<Map<String, dynamic>> registerUser({
-    required String name,
+    required String fullname,
     required String email,
     required String password,
     required String contactno,
@@ -47,13 +44,14 @@ class AuthService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/register'),
+        Uri.parse('$baseUrl/Register/UserRegister'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'name': name,
+          'fullname': fullname,
           'email': email,
           'password': password,
-          'phone': contactno,
+          'contactno': contactno,
+          'address': address,
         }),
       );
 
@@ -63,12 +61,15 @@ class AuthService {
         final error = jsonDecode(response.body);
         return {
           'success': false,
-          'message': error['message'] ?? 'Registration failed.',
+          'message':
+              error['message'] ?? 'Registration failed. Please try again.',
         };
       }
     } catch (e) {
-      // Demo mode
-      return {'success': true};
+      return {
+        'success': false,
+        'message': 'Cannot connect to server. Please try again.',
+      };
     }
   }
 }
