@@ -97,7 +97,11 @@ class _LoginScreenState extends State<LoginScreen>
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(result['message'] ?? 'Login failed'),
+              // ✅ FIX: Clear error message for wrong email/password
+              content: const Text(
+                '❌ Wrong email or password. Please try again.',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
               backgroundColor: AppTheme.deepCaramel,
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
@@ -111,7 +115,10 @@ class _LoginScreenState extends State<LoginScreen>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(e.toString()),
+          content: const Text(
+            'Incorrect email or password. Try again.',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
           backgroundColor: AppTheme.deepCaramel,
           behavior: SnackBarBehavior.floating,
           shape:
@@ -239,13 +246,8 @@ class _LoginScreenState extends State<LoginScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextButton(
-                            onPressed: () async {
-                              await _handleLogin();
-                            },
-                            child: Text('test')),
                         _animated(
-                          0,
+                          4,
                           const Text(
                             'Login to your account',
                             style: TextStyle(
@@ -259,7 +261,7 @@ class _LoginScreenState extends State<LoginScreen>
 
                         // Email
                         _animated(
-                          1,
+                          0,
                           TextFormField(
                             controller: _emailController,
                             keyboardType: TextInputType.emailAddress,
@@ -372,7 +374,7 @@ class _LoginScreenState extends State<LoginScreen>
                                           MainAxisAlignment.center,
                                       children: [
                                         Text(
-                                          'Signxxcc In',
+                                          'Sign In',
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.w700,
@@ -433,7 +435,7 @@ class _LoginScreenState extends State<LoginScreen>
                                   ),
                                 ),
                                 child: const Text(
-                                  'Create one 🎂',
+                                  'Create one',
                                   style: TextStyle(
                                     color: AppTheme.caramel,
                                     fontSize: 14,
