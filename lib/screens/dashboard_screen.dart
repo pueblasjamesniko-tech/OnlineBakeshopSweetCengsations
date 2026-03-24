@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 import 'login_screen.dart';
 import '../../../services/auth_service.dart';
+import 'order_status_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -346,13 +347,23 @@ class _ProfileTab extends StatelessWidget {
             child: Column(
               children: [
                 _ProfileTile(
-                    icon: Icons.receipt_long_outlined,
-                    label: 'My Orders',
-                    onTap: () {}),
+                  icon: Icons.location_on_outlined,
+                  label: 'My Order Status',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const OrderStatusScreen()),
+                  ),
+                ),
                 _ProfileTile(
-                    icon: Icons.location_on_outlined,
-                    label: 'Delivery Addresses',
-                    onTap: () {}),
+                  icon: Icons.location_on_outlined,
+                  label: 'Delivery Addresses',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const OrderStatusScreen()),
+                  ),
+                ),
                 _ProfileTile(
                     icon: Icons.notifications_outlined,
                     label: 'Notifications',

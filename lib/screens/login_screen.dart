@@ -347,8 +347,11 @@ class _LoginScreenState extends State<LoginScreen>
                             height: 54,
                             child: ElevatedButton(
                               onPressed: () {
-                                debugPrint('string');
-                                _handleLogin();
+                                Navigator.pushReplacement(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (_) => const DashboardScreen()),
+                                );
                               },
                               // onPressed: () async =>
                               //     _isLoading ? null : _handleLogin,
