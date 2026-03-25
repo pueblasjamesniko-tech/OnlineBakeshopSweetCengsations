@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '../../../theme/app_theme.dart';
+import '../theme/app_theme.dart';
 import 'login_screen.dart';
-import '../../../services/auth_service.dart';
+import '../services/auth_service.dart';
 import 'order_status_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -154,7 +154,7 @@ class _HomeTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
                 const Text(
-                  'Good day! 🌅',
+                  'Good day!',
                   style: TextStyle(color: Colors.white60, fontSize: 14),
                 ),
                 const SizedBox(height: 4),
@@ -162,7 +162,7 @@ class _HomeTab extends StatelessWidget {
                   'Order your favorites\nfresh from the oven!',
                   style: TextStyle(
                     color: Colors.white,
-                    fontSize: 26,
+                    fontSize: 20,
                     fontWeight: FontWeight.w800,
                     height: 1.2,
                   ),
@@ -200,7 +200,7 @@ class _ExploreTab extends StatelessWidget {
             child: const Text(
               'Explore Menu 🍰',
               style: TextStyle(
-                fontSize: 26,
+                fontSize: 18,
                 fontWeight: FontWeight.w800,
                 color: AppTheme.darkChoco,
               ),
@@ -229,7 +229,7 @@ class _CartTab extends StatelessWidget {
             child: Text(
               'My Cart 🛍️',
               style: TextStyle(
-                fontSize: 26,
+                fontSize: 18,
                 fontWeight: FontWeight.w800,
                 color: AppTheme.darkChoco,
               ),
@@ -347,7 +347,7 @@ class _ProfileTab extends StatelessWidget {
             child: Column(
               children: [
                 _ProfileTile(
-                  icon: Icons.location_on_outlined,
+                  icon: Icons.receipt_long_outlined,
                   label: 'My Order Status',
                   onTap: () => Navigator.push(
                     context,
@@ -358,11 +358,47 @@ class _ProfileTab extends StatelessWidget {
                 _ProfileTile(
                   icon: Icons.location_on_outlined,
                   label: 'Delivery Addresses',
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                        builder: (_) => const OrderStatusScreen()),
-                  ),
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(24)),
+                      ),
+                      builder: (_) => Padding(
+                        padding: const EdgeInsets.all(28),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: Colors.grey.withOpacity(0.3),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            const Icon(Icons.location_on_outlined,
+                                size: 48, color: Colors.grey),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'No Delivery Addresses',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 6),
+                            const Text(
+                              'You have no saved addresses yet.',
+                              style:
+                                  TextStyle(color: Colors.grey, fontSize: 13),
+                            ),
+                            const SizedBox(height: 24),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
                 ),
                 _ProfileTile(
                     icon: Icons.notifications_outlined,
