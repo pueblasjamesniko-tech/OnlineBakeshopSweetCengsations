@@ -82,6 +82,7 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() => _isLoading = false);
 
       if (result['success']) {
+        print('USER DATA: ${AuthService.currentUser}');
         if (mounted) {
           Navigator.pushReplacement(
             context,
@@ -99,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen>
             SnackBar(
               // ✅ FIX: Clear error message for wrong email/password
               content: const Text(
-                '❌ Wrong email or password. Please try again.',
+                'Wrong email or password. Please try again.',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               backgroundColor: AppTheme.deepCaramel,
@@ -347,11 +348,8 @@ class _LoginScreenState extends State<LoginScreen>
                             height: 54,
                             child: ElevatedButton(
                               onPressed: () {
-                                Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                      builder: (_) => const DashboardScreen()),
-                                );
+                                debugPrint('string');
+                                _handleLogin();
                               },
                               // onPressed: () async =>
                               //     _isLoading ? null : _handleLogin,

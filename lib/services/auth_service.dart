@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 class AuthService {
-  static const String baseUrl = 'http://10.67.166.192:5112';
+  static const String baseUrl = 'http://10.69.85.192:5112';
 
   // ✅ Stores the logged-in user's data globally
   static Map<String, dynamic>? currentUser;
