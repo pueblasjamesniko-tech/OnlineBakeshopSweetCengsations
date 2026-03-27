@@ -21,9 +21,9 @@ class AuthService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('LOGIN RESPONSE: $data'); // temporary - remove later
+        print('LOGIN RESPONSE: $data');
         if (data['status'] == 200) {
-          currentUser = data['data']; // ✅ Save user data after login
+          currentUser = data['data'];
           return {'success': true, 'data': data};
         }
         throw Exception('wrong password/login');
@@ -43,17 +43,25 @@ class AuthService {
     required String address,
   }) async {
     try {
+      final body = {
+        'fullName': fullname,
+        'email': email,
+        'password': password,
+        'address': address,
+        'contactNo': contactno,
+      };
+
+      print('REGISTER URL: $baseUrl/Register/UserRegister');
+      print('REGISTER BODY: ${jsonEncode(body)}');
+
       final response = await http.post(
         Uri.parse('$baseUrl/Register/UserRegister'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'fullname': fullname,
-          'email': email,
-          'password': password,
-          'contactno': contactno,
-          'address': address,
-        }),
+        body: jsonEncode(body),
       );
+
+      print('REGISTER STATUS: ${response.statusCode}');
+      print('REGISTER RESPONSE: ${response.body}');
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         return {'success': true};
@@ -66,6 +74,7 @@ class AuthService {
         };
       }
     } catch (e) {
+      print('REGISTER ERROR: $e');
       return {
         'success': false,
         'message': 'Cannot connect to server. Please try again.',

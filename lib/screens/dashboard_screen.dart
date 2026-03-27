@@ -30,26 +30,15 @@ class CartItem {
   double get total => product.price * quantity;
 }
 
-// ── Dummy Products ────────────────────────────────────────────────────────────
-final List<Product> _products = [
-  Product(id: '1', name: 'Chocolate Fudge Cake', category: 'Cakes', price: 650),
-  Product(id: '2', name: 'Ube Cheese Pandesal', category: 'Bread', price: 30),
-  Product(id: '3', name: 'Leche Flan', category: 'Desserts', price: 110),
-  Product(id: '4', name: 'Ensaymada', category: 'Bread', price: 45),
-  Product(id: '5', name: 'Buko Pandan Cake', category: 'Cakes', price: 580),
-  Product(id: '6', name: 'Polvoron', category: 'Sweets', price: 25),
-  Product(id: '7', name: 'Cheese Bread', category: 'Bread', price: 35),
-  Product(id: '8', name: 'Sans Rival', category: 'Cakes', price: 720),
-  Product(id: '9', name: 'Turon', category: 'Sweets', price: 20),
-  Product(id: '10', name: 'Mango Crepe Cake', category: 'Cakes', price: 690),
-];
+//Types of Products
+final List<Product> _products = [];
 
 const List<String> _categories = [
   'All',
   'Cakes',
   'Bread',
-  'Desserts',
-  'Sweets'
+  'Cookies',
+  'Cupcakes'
 ];
 
 // ── Cart State ────────────────────────────────────────────────────────────────
@@ -128,6 +117,16 @@ class _DashboardScreenState extends State<DashboardScreen>
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
+  // ✅ Stateful notif count — starts at 2 (welcome notifications), cleared when user reads
+  int _notifCount = 2;
+
+  // ✅ Called when user opens NotificationsScreen — clears all red dots
+  void _clearNotifications() {
+    if (_notifCount > 0) {
+      setState(() => _notifCount = 0);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -161,18 +160,24 @@ class _DashboardScreenState extends State<DashboardScreen>
             _HomeTab(onCartTap: () => setState(() => _navIndex = 2)),
             const _ExploreTab(),
             const _CartTab(),
-            _ProfileTab(onLogout: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-              );
-            }),
+            _ProfileTab(
+              onLogout: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const LoginScreen()),
+                );
+              },
+              // ✅ Pass the clear callback and current count down to ProfileTab
+              notifCount: _notifCount,
+              onNotifRead: _clearNotifications,
+            ),
           ],
         ),
       ),
       bottomNavigationBar: _BottomNav(
         currentIndex: _navIndex,
         cartCount: _cart.totalCount,
+        notifCount: _notifCount,
         onTap: (i) => setState(() => _navIndex = i),
       ),
     );
@@ -469,107 +474,40 @@ class _HomeTabState extends State<_HomeTab> {
           ),
         ),
 
-        // ── Products Grid ──────────────────────────────────────
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-          sliver: SliverGrid(
-            delegate: SliverChildBuilderDelegate(
-              (context, i) {
-                final p = _filtered[i];
-                final inCart = _cart.inCart(p.id);
-                return GestureDetector(
-                  onTap: () => _showProductSheet(p),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.chocolate.withOpacity(0.07),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
+        // ── Products Grid — TEMPORARILY EMPTY ─────────────────
+        SliverToBoxAdapter(
+          child: _filtered.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 60),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('🍰',
+                          style: TextStyle(
+                            fontSize: 56,
+                            color: AppTheme.chocolate.withOpacity(0.2),
+                          )),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Products coming soon!',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.chocolate.withOpacity(0.45),
                         ),
-                      ],
-                    ),
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: AppTheme.cream,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(p.category,
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: AppTheme.chocolate.withOpacity(0.5),
-                                fontWeight: FontWeight.w600,
-                              )),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Check back later for fresh baked treats.',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: AppTheme.chocolate.withOpacity(0.3),
                         ),
-                        const Spacer(),
-                        Text(p.name,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w700,
-                              color: AppTheme.darkChoco,
-                            )),
-                        const SizedBox(height: 6),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('₱${p.price.toStringAsFixed(0)}',
-                                style: const TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w800,
-                                  color: AppTheme.chocolate,
-                                )),
-                            GestureDetector(
-                              onTap: () {
-                                _cart.add(p);
-                                _showSnack(context, '${p.name} added to cart!',
-                                    AppTheme.chocolate);
-                              },
-                              child: Container(
-                                width: 30,
-                                height: 30,
-                                decoration: BoxDecoration(
-                                  color: inCart
-                                      ? AppTheme.chocolate
-                                      : AppTheme.cream,
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  inCart
-                                      ? Icons.check_rounded
-                                      : Icons.add_rounded,
-                                  size: 18,
-                                  color: inCart
-                                      ? Colors.white
-                                      : AppTheme.chocolate,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                );
-              },
-              childCount: _filtered.length,
-            ),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-              childAspectRatio: 1.1,
-            ),
-          ),
+                )
+              : const SizedBox.shrink(),
         ),
       ],
     );
@@ -880,7 +818,14 @@ class _CartTabState extends State<_CartTab> {
 // ── Profile Tab ───────────────────────────────────────────────────────────────
 class _ProfileTab extends StatelessWidget {
   final VoidCallback onLogout;
-  const _ProfileTab({required this.onLogout});
+  final int notifCount; // ✅ NEW
+  final VoidCallback onNotifRead; // ✅ NEW
+
+  const _ProfileTab({
+    required this.onLogout,
+    required this.notifCount,
+    required this.onNotifRead,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -908,7 +853,6 @@ class _ProfileTab extends StatelessWidget {
             ),
             child: Column(
               children: [
-                // ── Avatar with initial ──────────────────────
                 Container(
                   width: 90,
                   height: 90,
@@ -930,8 +874,6 @@ class _ProfileTab extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-
-                // ── Full Name ────────────────────────────────
                 Text(
                   fullName,
                   style: const TextStyle(
@@ -941,8 +883,6 @@ class _ProfileTab extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 4),
-
-                // ── Email ────────────────────────────────────
                 Text(
                   email,
                   style: TextStyle(
@@ -1014,15 +954,72 @@ class _ProfileTab extends StatelessWidget {
                     );
                   },
                 ),
-                // REPLACE WITH:
-                _ProfileTile(
-                    icon: Icons.notifications_outlined,
-                    label: 'Notifications',
-                    onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                              builder: (_) => const NotificationsScreen()),
+
+                // ✅ Notifications tile with conditional red dot badge
+                Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppTheme.chocolate.withOpacity(0.05),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: ListTile(
+                    onTap: () async {
+                      // ✅ Mark as read FIRST, then open screen
+                      onNotifRead();
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const NotificationsScreen()),
+                      );
+                    },
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: AppTheme.cream,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.notifications_outlined,
+                          color: AppTheme.darkChoco, size: 20),
+                    ),
+                    title: const Text('Notifications',
+                        style: TextStyle(
+                          color: AppTheme.darkChoco,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
                         )),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // ✅ Red dot — only shows when notifCount > 0
+                        if (notifCount > 0)
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              shape: BoxShape.circle,
+                              border:
+                                  Border.all(color: Colors.white, width: 1.5),
+                            ),
+                          ),
+                        if (notifCount > 0) const SizedBox(width: 8),
+                        Icon(Icons.arrow_forward_ios_rounded,
+                            size: 14,
+                            color: AppTheme.chocolate.withOpacity(0.3)),
+                      ],
+                    ),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+
                 const SizedBox(height: 8),
                 _ProfileTile(
                   icon: Icons.logout_rounded,
@@ -1138,11 +1135,13 @@ class _ProfileTile extends StatelessWidget {
 class _BottomNav extends StatelessWidget {
   final int currentIndex;
   final int cartCount;
+  final int notifCount; // NEW
   final ValueChanged<int> onTap;
 
   const _BottomNav({
     required this.currentIndex,
     required this.cartCount,
+    required this.notifCount, // NEW
     required this.onTap,
   });
 
@@ -1183,10 +1182,9 @@ class _BottomNav extends StatelessWidget {
               index: 2,
               current: currentIndex,
               onTap: onTap),
-          _NavItem(
-              icon: Icons.person_outline_rounded,
-              activeIcon: Icons.person_rounded,
-              label: 'Profile',
+          // ✅ NEW: Profile nav item with red dot badge
+          _NavItemProfile(
+              notifCount: notifCount,
               index: 3,
               current: currentIndex,
               onTap: onTap),
@@ -1246,7 +1244,7 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-// ── Nav Item Cart (with badge) ────────────────────────────────────────────────
+// Nav Item Cart (with badge)
 class _NavItemCart extends StatelessWidget {
   final int cartCount;
   final int index;
@@ -1307,6 +1305,75 @@ class _NavItemCart extends StatelessWidget {
             ),
             const SizedBox(height: 3),
             Text('Cart',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: isActive
+                      ? AppTheme.chocolate
+                      : AppTheme.chocolate.withOpacity(0.35),
+                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                )),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Nav Item Profile (with red dot badge)
+class _NavItemProfile extends StatelessWidget {
+  final int notifCount;
+  final int index;
+  final int current;
+  final ValueChanged<int> onTap;
+
+  const _NavItemProfile({
+    required this.notifCount,
+    required this.index,
+    required this.current,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isActive = index == current;
+    return GestureDetector(
+      onTap: () => onTap(index),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              children: [
+                Icon(
+                  isActive
+                      ? Icons.person_rounded
+                      : Icons.person_outline_rounded,
+                  color: isActive
+                      ? AppTheme.chocolate
+                      : AppTheme.chocolate.withOpacity(0.35),
+                  size: 26,
+                ),
+                // ✅ Red dot — shows when there are unread notifications
+                if (notifCount > 0)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: Colors.redAccent,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text('Profile',
                 style: TextStyle(
                   fontSize: 10,
                   color: isActive
