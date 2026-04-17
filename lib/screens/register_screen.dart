@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
-import '../../../services/auth_service.dart';
+import '../../../services/api_service.dart';
 import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -85,7 +85,7 @@ class _RegisterScreenState extends State<RegisterScreen>
 
     setState(() => _isLoading = true);
 
-    final result = await AuthService.registerUser(
+    final result = await ApiService.registerUser(
       fullname: _nameController.text.trim(),
       email: _emailController.text.trim(),
       password: _passwordController.text,

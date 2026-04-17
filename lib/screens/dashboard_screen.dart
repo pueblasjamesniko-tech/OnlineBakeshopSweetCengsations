@@ -1,109 +1,17 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
+import '../../../theme/app_theme.dart';
+import '../../../models/product_model.dart';
+import '../../../models/cart_item.dart';
+import '../../../models/user_session.dart';
+import '../../../models/UserModel.dart';
+import '../../../services/api_service.dart';
+
 import 'login_screen.dart';
-import '../services/auth_service.dart';
-import 'order_status_screen.dart';
-import 'notifications_screen.dart';
+import 'custom_order_screen.dart';
+import 'my_orders_screen.dart';
+import 'my_custom_orders_screen.dart';
+import 'help_support_screen.dart';
 
-// ── Product Model ─────────────────────────────────────────────────────────────
-class Product {
-  final String id;
-  final String name;
-  final String category;
-  final double price;
-
-  const Product({
-    required this.id,
-    required this.name,
-    required this.category,
-    required this.price,
-  });
-}
-
-// ── Cart Item ─────────────────────────────────────────────────────────────────
-class CartItem {
-  final Product product;
-  int quantity;
-
-  CartItem({required this.product, this.quantity = 1});
-
-  double get total => product.price * quantity;
-}
-
-//Types of Products
-final List<Product> _products = [];
-
-const List<String> _categories = [
-  'All',
-  'Cakes',
-  'Bread',
-  'Cookies',
-  'Cupcakes'
-];
-
-// ── Cart State ────────────────────────────────────────────────────────────────
-class _CartState extends ChangeNotifier {
-  static final _CartState _instance = _CartState._internal();
-  factory _CartState() => _instance;
-  _CartState._internal();
-
-  final List<CartItem> _items = [];
-
-  List<CartItem> get items => List.unmodifiable(_items);
-  int get totalCount => _items.fold(0, (s, i) => s + i.quantity);
-  double get totalPrice => _items.fold(0.0, (s, i) => s + i.total);
-  bool inCart(String id) => _items.any((i) => i.product.id == id);
-
-  void add(Product p) {
-    final idx = _items.indexWhere((i) => i.product.id == p.id);
-    if (idx >= 0) {
-      _items[idx].quantity++;
-    } else {
-      _items.add(CartItem(product: p));
-    }
-    notifyListeners();
-  }
-
-  void increase(String id) {
-    final idx = _items.indexWhere((i) => i.product.id == id);
-    if (idx >= 0) {
-      _items[idx].quantity++;
-      notifyListeners();
-    }
-  }
-
-  void decrease(String id) {
-    final idx = _items.indexWhere((i) => i.product.id == id);
-    if (idx >= 0) {
-      if (_items[idx].quantity > 1) {
-        _items[idx].quantity--;
-      } else {
-        _items.removeAt(idx);
-      }
-      notifyListeners();
-    }
-  }
-
-  void clear() {
-    _items.clear();
-    notifyListeners();
-  }
-}
-
-final _cart = _CartState();
-
-// ── Snackbar Helper ───────────────────────────────────────────────────────────
-void _showSnack(BuildContext context, String message, Color color) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(message),
-    backgroundColor: color,
-    behavior: SnackBarBehavior.floating,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    duration: const Duration(seconds: 2),
-  ));
-}
-
-// ── Dashboard Screen ──────────────────────────────────────────────────────────
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -113,19 +21,21 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen>
     with TickerProviderStateMixin {
+  // Tabs: 0 = Home, 1 = Cart, 2 = Profile
   int _navIndex = 0;
+  final List<CartItem> _cart = [];
+  List<ProductModel> _products = [];
+  bool _isLoadingProducts = true;
+  bool _cartLoaded = false;
+
+  // Key to access CartTab's state for triggering immediate checkout
+  final GlobalKey<_CartTabState> _cartTabKey = GlobalKey<_CartTabState>();
+
   late AnimationController _fadeCtrl;
   late Animation<double> _fadeAnim;
 
-  // ✅ Stateful notif count — starts at 2 (welcome notifications), cleared when user reads
-  int _notifCount = 2;
-
-  // ✅ Called when user opens NotificationsScreen — clears all red dots
-  void _clearNotifications() {
-    if (_notifCount > 0) {
-      setState(() => _notifCount = 0);
-    }
-  }
+  UserModel? get _user => UserSession.instance.currentUser;
+  String get _userId => _user?.id ?? '';
 
   @override
   void initState() {
@@ -136,16 +46,91 @@ class _DashboardScreenState extends State<DashboardScreen>
     );
     _fadeAnim = CurvedAnimation(parent: _fadeCtrl, curve: Curves.easeIn);
     _fadeCtrl.forward();
-    _cart.addListener(_rebuild);
+    _initLoad();
   }
 
-  void _rebuild() => setState(() {});
+  Future<void> _initLoad() async {
+    // Load cart from storage first, then products in parallel
+    await _loadPersistedCart();
+    _loadProducts();
+  }
+
+  /// Restore the user's cart from SharedPreferences
+  Future<void> _loadPersistedCart() async {
+    if (_userId.isEmpty) return;
+    final saved = await ApiService.loadCart(_userId);
+    if (saved.isNotEmpty) {
+      setState(() {
+        _cart.clear();
+        _cart.addAll(saved);
+      });
+    }
+    _cartLoaded = true;
+  }
+
+  /// Persist the cart whenever it changes
+  Future<void> _persistCart() async {
+    if (_userId.isNotEmpty) {
+      await ApiService.saveCart(_userId, _cart);
+    }
+  }
 
   @override
   void dispose() {
-    _cart.removeListener(_rebuild);
     _fadeCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadProducts() async {
+    setState(() => _isLoadingProducts = true);
+    final products = await ApiService.getAllProducts();
+    setState(() {
+      _products = products;
+      _isLoadingProducts = false;
+    });
+  }
+
+  int get _cartCount => _cart.fold(0, (s, i) => s + i.quantity);
+  double get _cartTotal => _cart.fold(0.0, (s, i) => s + i.lineTotal);
+
+  void _addToCart(CartItem item) {
+    setState(() {
+      if (item.isCustom) {
+        // Custom orders are already saved to the server — don't add to cart
+        // Just show a snack so user knows to check My Custom Orders
+      } else {
+        final existing = _cart.where(
+          (c) =>
+              !c.isCustom &&
+              c.product?.productId == item.product?.productId &&
+              c.deliveryDate == item.deliveryDate &&
+              c.deliveryAddress == item.deliveryAddress,
+        );
+        if (existing.isNotEmpty) {
+          existing.first.quantity += item.quantity;
+        } else {
+          _cart.add(item);
+        }
+      }
+    });
+    _persistCart();
+  }
+
+  // Called when user taps "Place Order Now" on a product
+  void _placeNow(CartItem item) {
+    _addToCart(item);
+    setState(() => _navIndex = 1); // Switch to cart tab (index 1 now)
+    Future.delayed(const Duration(milliseconds: 350), () {
+      _cartTabKey.currentState?.triggerCheckout();
+    });
+  }
+
+  void _handleLogout() {
+    ApiService.logout();
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+    );
   }
 
   @override
@@ -157,461 +142,1336 @@ class _DashboardScreenState extends State<DashboardScreen>
         child: IndexedStack(
           index: _navIndex,
           children: [
-            _HomeTab(onCartTap: () => setState(() => _navIndex = 2)),
-            const _ExploreTab(),
-            const _CartTab(),
-            _ProfileTab(
-              onLogout: () {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                );
+            // 0 — Home
+            _HomeTab(
+              products: _products,
+              isLoading: _isLoadingProducts,
+              cartCount: _cartCount,
+              userName: UserSession.instance.firstName,
+              onAddToCart: _addToCart,
+              onPlaceNow: _placeNow,
+              onCartTap: () => setState(() => _navIndex = 1),
+              onCustomOrder: (type) => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CustomOrderScreen(
+                    orderType: type,
+                    onSubmitted: (item) {
+                      // Custom order was already saved to server in CustomOrderScreen.
+                      // Just pop back — tell user to check My Custom Orders.
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Row(
+                            children: [
+                              Text('✨', style: TextStyle(fontSize: 18)),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Custom order submitted! Check My Custom Orders in Profile to track it.',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                          backgroundColor: AppTheme.chocolate,
+                          behavior: SnackBarBehavior.floating,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ),
+              onRefresh: _loadProducts,
+            ),
+
+            // 1 — Cart
+            _CartTab(
+              key: _cartTabKey,
+              cart: _cart,
+              total: _cartTotal,
+              userId: _userId,
+              onUpdate: () {
+                setState(() {});
+                _persistCart();
               },
-              // ✅ Pass the clear callback and current count down to ProfileTab
-              notifCount: _notifCount,
-              onNotifRead: _clearNotifications,
+              onOrdersPlaced: () async {
+                // Clear persisted cart after all orders are placed
+                await ApiService.clearCart(_userId);
+              },
+            ),
+
+            // 2 — Profile
+            _ProfileTab(
+              user: _user,
+              onLogout: _handleLogout,
             ),
           ],
         ),
       ),
       bottomNavigationBar: _BottomNav(
         currentIndex: _navIndex,
-        cartCount: _cart.totalCount,
-        notifCount: _notifCount,
+        cartCount: _cartCount,
         onTap: (i) => setState(() => _navIndex = i),
       ),
     );
   }
 }
 
-// ── Home Tab ──────────────────────────────────────────────────────────────────
-class _HomeTab extends StatefulWidget {
+// ═══════════════════════════════════════════════════════════════
+// HOME TAB
+// ═══════════════════════════════════════════════════════════════
+class _HomeTab extends StatelessWidget {
+  final List<ProductModel> products;
+  final bool isLoading;
+  final int cartCount;
+  final String userName;
+  final ValueChanged<CartItem> onAddToCart;
+  final ValueChanged<CartItem> onPlaceNow;
   final VoidCallback onCartTap;
-  const _HomeTab({required this.onCartTap});
+  final ValueChanged<String> onCustomOrder;
+  final Future<void> Function() onRefresh;
+
+  const _HomeTab({
+    required this.products,
+    required this.isLoading,
+    required this.cartCount,
+    required this.userName,
+    required this.onAddToCart,
+    required this.onPlaceNow,
+    required this.onCartTap,
+    required this.onCustomOrder,
+    required this.onRefresh,
+  });
+
+  String _getGreeting() {
+    final hour = DateTime.now().hour;
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  }
 
   @override
-  State<_HomeTab> createState() => _HomeTabState();
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      color: AppTheme.chocolate,
+      child: CustomScrollView(
+        slivers: [
+          // ── Header ──────────────────────────────────────────
+          SliverToBoxAdapter(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: AppTheme.chocolateGradient,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(36),
+                  bottomRight: Radius.circular(36),
+                ),
+              ),
+              padding: EdgeInsets.only(
+                top: MediaQuery.of(context).padding.top + 16,
+                left: 22,
+                right: 22,
+                bottom: 24,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Center(
+                              child: Text('🧁', style: TextStyle(fontSize: 22)),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Sweet Cengsations',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              Text(
+                                '✦ Artisan Bakeshop ✦',
+                                style: TextStyle(
+                                  color: AppTheme.gold.withOpacity(0.85),
+                                  fontSize: 10,
+                                  letterSpacing: 1.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      GestureDetector(
+                        onTap: onCartTap,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              child: const Icon(
+                                Icons.shopping_bag_outlined,
+                                color: Colors.white,
+                                size: 22,
+                              ),
+                            ),
+                            if (cartCount > 0)
+                              Positioned(
+                                top: -4,
+                                right: -4,
+                                child: Container(
+                                  width: 18,
+                                  height: 18,
+                                  decoration: const BoxDecoration(
+                                    color: AppTheme.gold,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '$cartCount',
+                                      style: const TextStyle(
+                                        color: AppTheme.darkChoco,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    '${_getGreeting()}, $userName! 🌅',
+                    style: const TextStyle(color: Colors.white60, fontSize: 14),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'What sweet treat\nare you craving?',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Custom Order Banner ──────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '🎨 Customize Your Order',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.darkChoco,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Design your dream cake or cupcake!',
+                    style: TextStyle(
+                      color: AppTheme.chocolate.withOpacity(0.55),
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _CustomOrderCard(
+                          emoji: '🎂',
+                          title: 'Custom Cake',
+                          subtitle: 'Design your\ndream cake',
+                          onTap: () => onCustomOrder('Cake'),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _CustomOrderCard(
+                          emoji: '🧁',
+                          title: 'Custom Cupcake',
+                          subtitle: 'Build your own\ncupcake set',
+                          onTap: () => onCustomOrder('Cupcake'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Products Header ──────────────────────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 28, 20, 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    '🎂 Our Products',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: AppTheme.darkChoco,
+                    ),
+                  ),
+                  if (!isLoading)
+                    Text(
+                      '${products.length} items',
+                      style: const TextStyle(
+                        color: AppTheme.caramel,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Product Grid ─────────────────────────────────────
+          if (isLoading)
+            const SliverToBoxAdapter(
+              child: Center(
+                child: Padding(
+                  padding: EdgeInsets.all(48),
+                  child: CircularProgressIndicator(color: AppTheme.chocolate),
+                ),
+              ),
+            )
+          else if (products.isEmpty)
+            SliverToBoxAdapter(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(40),
+                  child: Column(
+                    children: [
+                      const Text('🍰', style: TextStyle(fontSize: 48)),
+                      const SizedBox(height: 12),
+                      Text(
+                        'No products yet',
+                        style: TextStyle(
+                          color: AppTheme.chocolate.withOpacity(0.4),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              sliver: SliverGrid(
+                delegate: SliverChildBuilderDelegate(
+                  (_, i) => _ProductCard(
+                    product: products[i],
+                    onAddToCart: onAddToCart,
+                    onPlaceNow: onPlaceNow,
+                  ),
+                  childCount: products.length,
+                ),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 2,
+                  childAspectRatio: 0.72,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+              ),
+            ),
+
+          const SliverToBoxAdapter(child: SizedBox(height: 100)),
+        ],
+      ),
+    );
+  }
 }
 
-class _HomeTabState extends State<_HomeTab> {
-  String _selectedCategory = 'All';
+// ── Custom Order Banner Card ──────────────────────────────────────────────────
+class _CustomOrderCard extends StatelessWidget {
+  final String emoji;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
 
-  List<Product> get _filtered => _selectedCategory == 'All'
-      ? _products
-      : _products.where((p) => p.category == _selectedCategory).toList();
+  const _CustomOrderCard({
+    required this.emoji,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
 
   @override
-  void initState() {
-    super.initState();
-    _cart.addListener(_rebuild);
-  }
-
-  void _rebuild() => setState(() {});
-
-  @override
-  void dispose() {
-    _cart.removeListener(_rebuild);
-    super.dispose();
-  }
-
-  void _showProductSheet(Product product) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: AppTheme.chocolateGradient,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.chocolate.withOpacity(0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(4),
-                ),
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: Text(emoji, style: const TextStyle(fontSize: 26)),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.6),
+                fontSize: 11,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 10),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
               decoration: BoxDecoration(
-                color: AppTheme.cream,
+                color: AppTheme.gold,
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text(product.category,
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: AppTheme.chocolate.withOpacity(0.5),
-                    fontWeight: FontWeight.w600,
-                  )),
-            ),
-            const SizedBox(height: 8),
-            Text(product.name,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w800,
+              child: const Text(
+                'Order Now →',
+                style: TextStyle(
                   color: AppTheme.darkChoco,
-                )),
-            const SizedBox(height: 4),
-            Text('₱${product.price.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontSize: 24,
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
-                  color: AppTheme.chocolate,
-                )),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: () {
-                      _cart.add(product);
-                      Navigator.pop(context);
-                      _showSnack(context, '${product.name} added to cart!',
-                          AppTheme.chocolate);
-                    },
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.chocolate,
-                      side: const BorderSide(color: AppTheme.chocolate),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                    child: const Text('Add to Cart',
-                        style: TextStyle(fontWeight: FontWeight.w700)),
-                  ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: () {
-                      _cart.add(product);
-                      Navigator.pop(context);
-                      _showSnack(context, '${product.name} ordered!',
-                          const Color(0xFF4CAF7D));
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.chocolate,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      elevation: 0,
-                    ),
-                    child: const Text('Order Now',
-                        style: TextStyle(fontWeight: FontWeight.w700)),
-                  ),
-                ),
-              ],
+              ),
             ),
           ],
         ),
       ),
     );
   }
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        // ── Header ────────────────────────────────────────────
-        SliverToBoxAdapter(
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: AppTheme.chocolateGradient,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(36),
-                bottomRight: Radius.circular(36),
-              ),
-            ),
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 22,
-              right: 22,
-              bottom: 24,
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: const Center(
-                            child: Text('🧁', style: TextStyle(fontSize: 22)),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text('Sweet Cengsations',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                )),
-                            Text('✦ Online Bakeshop ✦',
-                                style: TextStyle(
-                                  color: AppTheme.gold.withOpacity(0.85),
-                                  fontSize: 10,
-                                  letterSpacing: 1.5,
-                                )),
-                          ],
-                        ),
-                      ],
-                    ),
-                    GestureDetector(
-                      onTap: widget.onCartTap,
-                      child: Stack(
-                        children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Icon(Icons.shopping_bag_outlined,
-                                color: Colors.white, size: 22),
-                          ),
-                          if (_cart.totalCount > 0)
-                            Positioned(
-                              right: 0,
-                              top: 0,
-                              child: Container(
-                                width: 18,
-                                height: 18,
-                                decoration: const BoxDecoration(
-                                  color: AppTheme.gold,
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text('${_cart.totalCount}',
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                        color: Colors.white,
-                                      )),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                const Text('Good day!',
-                    style: TextStyle(color: Colors.white60, fontSize: 14)),
-                const SizedBox(height: 4),
-                const Text('Order your favorites\nfresh from the oven!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      height: 1.2,
-                    )),
-              ],
-            ),
-          ),
-        ),
-
-        // ── Category Filter ────────────────────────────────────
-        SliverToBoxAdapter(
-          child: SizedBox(
-            height: 52,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              itemCount: _categories.length,
-              itemBuilder: (context, i) {
-                final cat = _categories[i];
-                final isSelected = cat == _selectedCategory;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedCategory = cat),
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    decoration: BoxDecoration(
-                      color: isSelected ? AppTheme.chocolate : Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: AppTheme.chocolate.withOpacity(0.08),
-                          blurRadius: 6,
-                        ),
-                      ],
-                    ),
-                    child: Center(
-                      child: Text(cat,
-                          style: TextStyle(
-                            color: isSelected
-                                ? Colors.white
-                                : AppTheme.chocolate.withOpacity(0.6),
-                            fontSize: 13,
-                            fontWeight:
-                                isSelected ? FontWeight.w700 : FontWeight.w500,
-                          )),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ),
-
-        // ── Products Grid — TEMPORARILY EMPTY ─────────────────
-        SliverToBoxAdapter(
-          child: _filtered.isEmpty
-              ? Padding(
-                  padding: const EdgeInsets.only(top: 60),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('🍰',
-                          style: TextStyle(
-                            fontSize: 56,
-                            color: AppTheme.chocolate.withOpacity(0.2),
-                          )),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Products coming soon!',
-                        style: TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w700,
-                          color: AppTheme.chocolate.withOpacity(0.45),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        'Check back later for fresh baked treats.',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.chocolate.withOpacity(0.3),
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : const SizedBox.shrink(),
-        ),
-      ],
-    );
-  }
 }
 
-// ── Explore Tab ───────────────────────────────────────────────────────────────
-class _ExploreTab extends StatelessWidget {
-  const _ExploreTab();
+// ── Product Card (2-column grid) ──────────────────────────────────────────────
+class _ProductCard extends StatelessWidget {
+  final ProductModel product;
+  final ValueChanged<CartItem> onAddToCart;
+  final ValueChanged<CartItem> onPlaceNow;
 
-  @override
-  Widget build(BuildContext context) {
-    return CustomScrollView(
-      slivers: [
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: EdgeInsets.only(
-              top: MediaQuery.of(context).padding.top + 16,
-              left: 22,
-              right: 22,
-              bottom: 16,
-            ),
-            child: const Text('Explore Menu',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.darkChoco,
-                )),
-          ),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: 100)),
-      ],
-    );
-  }
-}
+  const _ProductCard({
+    required this.product,
+    required this.onAddToCart,
+    required this.onPlaceNow,
+  });
 
-// ── Cart Tab ──────────────────────────────────────────────────────────────────
-class _CartTab extends StatefulWidget {
-  const _CartTab();
-
-  @override
-  State<_CartTab> createState() => _CartTabState();
-}
-
-class _CartTabState extends State<_CartTab> {
-  @override
-  void initState() {
-    super.initState();
-    _cart.addListener(_rebuild);
-  }
-
-  void _rebuild() => setState(() {});
-
-  @override
-  void dispose() {
-    _cart.removeListener(_rebuild);
-    super.dispose();
-  }
-
-  void _placeOrder() {
-    showDialog(
+  void _showDetail(BuildContext context) {
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Confirm Order',
-            style: TextStyle(
-              fontWeight: FontWeight.w800,
-              color: AppTheme.darkChoco,
-            )),
-        content: Text(
-          'Total: ₱${_cart.totalPrice.toStringAsFixed(0)}\n\nProceed with your order?',
-          style: TextStyle(color: AppTheme.chocolate.withOpacity(0.7)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel',
-                style: TextStyle(color: AppTheme.chocolate)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              _cart.clear();
-              Navigator.pop(context);
-              _showSnack(context, 'Order placed successfully!',
-                  const Color(0xFF4CAF7D));
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.chocolate,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
-            ),
-            child: const Text('Place Order',
-                style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ],
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ProductDetailSheet(
+        product: product,
+        onAddToCart: onAddToCart,
+        onPlaceNow: onPlaceNow,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final items = _cart.items;
+    return GestureDetector(
+      onTap: () => _showDetail(context),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.chocolate.withOpacity(0.07),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Image ──────────────────────────────────────────
+            ClipRRect(
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(22)),
+              child: SizedBox(
+                width: double.infinity,
+                height: 110,
+                child: product.imageUrl != null && product.imageUrl!.isNotEmpty
+                    ? Image.network(
+                        '${ApiService.baseUrl}${product.imageUrl}',
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _PlaceholderImage(),
+                      )
+                    : _PlaceholderImage(),
+              ),
+            ),
+
+            // ── Info ───────────────────────────────────────────
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      product.productName,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppTheme.darkChoco,
+                        height: 1.2,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const Spacer(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '₱${product.price.toInt()}',
+                          style: const TextStyle(
+                            color: AppTheme.caramel,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => _showDetail(context),
+                          child: Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: AppTheme.chocolate,
+                              borderRadius: BorderRadius.circular(9),
+                            ),
+                            child: const Icon(
+                              Icons.add,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlaceholderImage extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppTheme.blush.withOpacity(0.4),
+      child: const Center(
+        child: Text('🎂', style: TextStyle(fontSize: 40)),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PRODUCT DETAIL BOTTOM SHEET
+// ═══════════════════════════════════════════════════════════════
+class _ProductDetailSheet extends StatefulWidget {
+  final ProductModel product;
+  final ValueChanged<CartItem> onAddToCart;
+  final ValueChanged<CartItem> onPlaceNow;
+
+  const _ProductDetailSheet({
+    required this.product,
+    required this.onAddToCart,
+    required this.onPlaceNow,
+  });
+
+  @override
+  State<_ProductDetailSheet> createState() => _ProductDetailSheetState();
+}
+
+class _ProductDetailSheetState extends State<_ProductDetailSheet> {
+  int _qty = 1;
+
+  DateTime? _deliveryDate;
+  TimeOfDay? _deliveryTime;
+  final _addressCtrl = TextEditingController();
+  final _notesCtrl = TextEditingController();
+
+  bool _showOrderForm = false;
+  bool _placeDirectly = false;
+  final _formKey = GlobalKey<FormState>();
+
+  String get _formattedDate => _deliveryDate == null
+      ? 'Select date'
+      : '${_deliveryDate!.year}-${_deliveryDate!.month.toString().padLeft(2, '0')}-${_deliveryDate!.day.toString().padLeft(2, '0')}';
+
+  String get _formattedTime =>
+      _deliveryTime == null ? 'Select time' : _deliveryTime!.format(context);
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now().add(const Duration(days: 1)),
+      lastDate: DateTime.now().add(const Duration(days: 90)),
+      builder: (ctx, child) => Theme(
+        data: ThemeData.light().copyWith(
+          colorScheme: const ColorScheme.light(primary: AppTheme.chocolate),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _deliveryDate = picked);
+  }
+
+  Future<void> _pickTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.now(),
+      builder: (ctx, child) => Theme(
+        data: ThemeData.light().copyWith(
+          colorScheme: const ColorScheme.light(primary: AppTheme.chocolate),
+        ),
+        child: child!,
+      ),
+    );
+    if (picked != null) setState(() => _deliveryTime = picked);
+  }
+
+  void _confirmAction() {
+    if (!_formKey.currentState!.validate()) return;
+    if (_deliveryDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a delivery date')),
+      );
+      return;
+    }
+    if (_deliveryTime == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select a delivery time')),
+      );
+      return;
+    }
+
+    final item = CartItem.regular(
+      product: widget.product,
+      quantity: _qty,
+      deliveryDate: _formattedDate,
+      deliveryTime: _formattedTime,
+      deliveryAddress: _addressCtrl.text.trim(),
+      specialNotes: _notesCtrl.text.trim(),
+    );
+
+    Navigator.pop(context);
+
+    if (_placeDirectly) {
+      widget.onPlaceNow(item);
+    } else {
+      widget.onAddToCart(item);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Text('🛍️', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '${widget.product.productName} added to cart!',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: AppTheme.chocolate,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _addressCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: _showOrderForm ? 0.92 : 0.65,
+      minChildSize: 0.4,
+      maxChildSize: 0.95,
+      builder: (_, scrollCtrl) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SingleChildScrollView(
+          controller: scrollCtrl,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.only(top: 12, bottom: 8),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppTheme.roseDust.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+
+              // ── Product Image ─────────────────────────────────
+              SizedBox(
+                width: double.infinity,
+                height: 200,
+                child: widget.product.imageUrl != null &&
+                        widget.product.imageUrl!.isNotEmpty
+                    ? Image.network(
+                        '${ApiService.baseUrl}${widget.product.imageUrl}',
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: AppTheme.blush.withOpacity(0.3),
+                          child: const Center(
+                            child: Text('🎂', style: TextStyle(fontSize: 64)),
+                          ),
+                        ),
+                      )
+                    : Container(
+                        color: AppTheme.blush.withOpacity(0.3),
+                        child: const Center(
+                          child: Text('🎂', style: TextStyle(fontSize: 64)),
+                        ),
+                      ),
+              ),
+
+              Padding(
+                padding: const EdgeInsets.all(22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // ── Name & Price ────────────────────────────
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            widget.product.productName,
+                            style: const TextStyle(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.darkChoco,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '₱${widget.product.price.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.caramel,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      widget.product.description,
+                      style: TextStyle(
+                        color: AppTheme.chocolate.withOpacity(0.6),
+                        fontSize: 14,
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // ── Quantity ────────────────────────────────
+                    Row(
+                      children: [
+                        const Text(
+                          'Quantity',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: AppTheme.darkChoco,
+                            fontSize: 15,
+                          ),
+                        ),
+                        const Spacer(),
+                        _QtyControl(
+                          qty: _qty,
+                          onMinus: () {
+                            if (_qty > 1) setState(() => _qty--);
+                          },
+                          onPlus: () => setState(() => _qty++),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Subtotal: ₱${(widget.product.price * _qty).toInt()}',
+                      style: const TextStyle(
+                        color: AppTheme.caramel,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+                    const Divider(color: Color(0xFFEEE0D4)),
+                    const SizedBox(height: 16),
+
+                    // ── Buttons or Order Form ───────────────────
+                    if (!_showOrderForm) ...[
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          onPressed: () => setState(() {
+                            _placeDirectly = false;
+                            _showOrderForm = true;
+                          }),
+                          icon:
+                              const Icon(Icons.shopping_bag_outlined, size: 20),
+                          label: const Text(
+                            'Add to Cart',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.chocolate,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton.icon(
+                          onPressed: () => setState(() {
+                            _placeDirectly = true;
+                            _showOrderForm = true;
+                          }),
+                          icon: const Icon(Icons.flash_on_rounded, size: 20),
+                          label: const Text(
+                            'Place Order Now',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppTheme.caramel,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                    ] else ...[
+                      // ── Order Details Form ────────────────────
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: _placeDirectly
+                                  ? AppTheme.caramel.withOpacity(0.12)
+                                  : AppTheme.chocolate.withOpacity(0.08),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _placeDirectly
+                                      ? Icons.flash_on_rounded
+                                      : Icons.shopping_bag_outlined,
+                                  size: 14,
+                                  color: _placeDirectly
+                                      ? AppTheme.caramel
+                                      : AppTheme.chocolate,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _placeDirectly
+                                      ? 'Place Order Now'
+                                      : 'Add to Cart',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: _placeDirectly
+                                        ? AppTheme.caramel
+                                        : AppTheme.chocolate,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Delivery Details',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: AppTheme.darkChoco,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Form(
+                        key: _formKey,
+                        child: Column(
+                          children: [
+                            _TapField(
+                              label: 'Delivery Date',
+                              value: _formattedDate,
+                              icon: Icons.calendar_today_outlined,
+                              onTap: _pickDate,
+                            ),
+                            const SizedBox(height: 12),
+                            _TapField(
+                              label: 'Delivery Time',
+                              value: _formattedTime,
+                              icon: Icons.access_time_outlined,
+                              onTap: _pickTime,
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _addressCtrl,
+                              maxLines: 2,
+                              decoration: InputDecoration(
+                                labelText: 'Delivery Address',
+                                prefixIcon: Icon(
+                                  Icons.location_on_outlined,
+                                  color: AppTheme.caramel.withOpacity(0.7),
+                                  size: 20,
+                                ),
+                              ),
+                              validator: (v) => (v == null || v.isEmpty)
+                                  ? 'Address is required'
+                                  : null,
+                            ),
+                            const SizedBox(height: 12),
+                            TextFormField(
+                              controller: _notesCtrl,
+                              maxLines: 2,
+                              decoration: InputDecoration(
+                                labelText: 'Special Notes (optional)',
+                                prefixIcon: Icon(
+                                  Icons.note_outlined,
+                                  color: AppTheme.caramel.withOpacity(0.7),
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 20),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: () =>
+                                        setState(() => _showOrderForm = false),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: AppTheme.chocolate,
+                                      side: const BorderSide(
+                                          color: AppTheme.chocolate),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                    ),
+                                    child: const Text('Back'),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  flex: 2,
+                                  child: ElevatedButton(
+                                    onPressed: _confirmAction,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _placeDirectly
+                                          ? AppTheme.caramel
+                                          : AppTheme.chocolate,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(14),
+                                      ),
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      elevation: 0,
+                                    ),
+                                    child: Text(
+                                      _placeDirectly
+                                          ? '⚡  Confirm & Order'
+                                          : '🛍️  Confirm & Add',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 15,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Tap Field ─────────────────────────────────────────────────────────────────
+class _TapField extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _TapField({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isPlaceholder = value.startsWith('Select');
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppTheme.warmWhite,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppTheme.roseDust.withOpacity(0.4)),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: AppTheme.caramel.withOpacity(0.7), size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: AppTheme.chocolate.withOpacity(0.5),
+                      fontSize: 11,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      color: isPlaceholder
+                          ? AppTheme.chocolate.withOpacity(0.35)
+                          : AppTheme.darkChoco,
+                      fontSize: 14,
+                      fontWeight:
+                          isPlaceholder ? FontWeight.w400 : FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(
+              Icons.arrow_drop_down,
+              color: AppTheme.caramel.withOpacity(0.6),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Qty Control ───────────────────────────────────────────────────────────────
+class _QtyControl extends StatelessWidget {
+  final int qty;
+  final VoidCallback onMinus;
+  final VoidCallback onPlus;
+
+  const _QtyControl({
+    required this.qty,
+    required this.onMinus,
+    required this.onPlus,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        _QBtn(icon: Icons.remove, onTap: onMinus),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            '$qty',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              fontSize: 18,
+              color: AppTheme.darkChoco,
+            ),
+          ),
+        ),
+        _QBtn(icon: Icons.add, filled: true, onTap: onPlus),
+      ],
+    );
+  }
+}
+
+class _QBtn extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool filled;
+
+  const _QBtn({required this.icon, required this.onTap, this.filled = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          color: filled ? AppTheme.chocolate : AppTheme.cream,
+          borderRadius: BorderRadius.circular(9),
+          border: filled
+              ? null
+              : Border.all(color: AppTheme.roseDust.withOpacity(0.4)),
+        ),
+        child: Icon(icon,
+            size: 18, color: filled ? Colors.white : AppTheme.chocolate),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CART TAB
+// ═══════════════════════════════════════════════════════════════
+class _CartTab extends StatefulWidget {
+  final List<CartItem> cart;
+  final double total;
+  final String userId;
+  final VoidCallback onUpdate;
+  final Future<void> Function() onOrdersPlaced;
+
+  const _CartTab({
+    super.key,
+    required this.cart,
+    required this.total,
+    required this.userId,
+    required this.onUpdate,
+    required this.onOrdersPlaced,
+  });
+
+  @override
+  State<_CartTab> createState() => _CartTabState();
+}
+
+class _CartTabState extends State<_CartTab> {
+  bool _isPlacingOrder = false;
+
+  void triggerCheckout() {
+    if (!_isPlacingOrder && widget.cart.isNotEmpty) {
+      _placeAllOrders();
+    }
+  }
+
+  Future<void> _placeAllOrders() async {
+    if (widget.cart.isEmpty) return;
+    setState(() => _isPlacingOrder = true);
+
+    int success = 0;
+    int failed = 0;
+    final userId = int.tryParse(widget.userId) ?? 0;
+
+    for (final item in List.from(widget.cart)) {
+      if (item.isCustom) {
+        // Custom orders are already on the server — skip
+        continue;
+      }
+
+      final result = await ApiService.createOrder(
+        userId: userId,
+        productId: item.product!.productId,
+        quantity: item.quantity,
+        totalPrice: item.lineTotal,
+        deliveryDate: item.deliveryDate ?? '',
+        deliveryTime: item.deliveryTime ?? '',
+        deliveryAddress: item.deliveryAddress ?? '',
+        specialNotes: item.specialNotes,
+      );
+
+      if (result['success'] == true) {
+        success++;
+      } else {
+        failed++;
+      }
+    }
+
+    setState(() => _isPlacingOrder = false);
+
+    if (!mounted) return;
+
+    if (failed == 0 && success > 0) {
+      widget.cart.clear();
+      widget.onUpdate();
+      await widget.onOrdersPlaced();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Text('🎉', style: TextStyle(fontSize: 18)),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '$success order${success > 1 ? 's' : ''} placed! Check My Orders in Profile to track.',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: Colors.green.shade600,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else if (success == 0 && failed == 0) {
+      // Cart was empty of placeable items
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('No orders to place.'),
+          backgroundColor: Colors.orange.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '$success placed, $failed failed. Please try again.',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: Colors.orange.shade700,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Column(
       children: [
         SizedBox(height: MediaQuery.of(context).padding.top + 16),
@@ -619,141 +1479,68 @@ class _CartTabState extends State<_CartTab> {
           padding: EdgeInsets.symmetric(horizontal: 22),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: Text('My Cart',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: AppTheme.darkChoco,
-                )),
-          ),
-        ),
-        const SizedBox(height: 12),
-        if (items.isEmpty)
-          Expanded(
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.shopping_bag_outlined,
-                      size: 64, color: AppTheme.chocolate.withOpacity(0.2)),
-                  const SizedBox(height: 16),
-                  Text('Your cart is empty',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                        color: AppTheme.chocolate.withOpacity(0.5),
-                      )),
-                  const SizedBox(height: 8),
-                  Text('Add some sweet treats to get started!',
-                      style: TextStyle(
-                        color: AppTheme.chocolate.withOpacity(0.35),
-                        fontSize: 13,
-                      )),
-                ],
+            child: Text(
+              'My Cart 🛍️',
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                color: AppTheme.darkChoco,
               ),
             ),
-          )
-        else ...[
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              itemCount: items.length,
-              itemBuilder: (context, i) {
-                final item = items[i];
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.chocolate.withOpacity(0.06),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: Row(
+          ),
+        ),
+        const SizedBox(height: 16),
+        Expanded(
+          child: widget.cart.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(item.product.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                  color: AppTheme.darkChoco,
-                                )),
-                            const SizedBox(height: 4),
-                            Text(
-                                '₱${item.product.price.toStringAsFixed(0)} each',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.chocolate.withOpacity(0.5),
-                                )),
-                          ],
+                      const Text('🛒', style: TextStyle(fontSize: 60)),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Your cart is empty',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.chocolate.withOpacity(0.5),
                         ),
                       ),
-                      Row(
-                        children: [
-                          GestureDetector(
-                            onTap: () => _cart.decrease(item.product.id),
-                            child: Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: AppTheme.cream,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(Icons.remove_rounded,
-                                  size: 16, color: AppTheme.chocolate),
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            child: Text('${item.quantity}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15,
-                                  color: AppTheme.darkChoco,
-                                )),
-                          ),
-                          GestureDetector(
-                            onTap: () => _cart.increase(item.product.id),
-                            child: Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: AppTheme.chocolate,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(Icons.add_rounded,
-                                  size: 16, color: Colors.white),
-                            ),
-                          ),
-                        ],
+                      const SizedBox(height: 8),
+                      Text(
+                        'Add some sweet treats to get started!',
+                        style: TextStyle(
+                          color: AppTheme.chocolate.withOpacity(0.35),
+                          fontSize: 13,
+                        ),
                       ),
-                      const SizedBox(width: 12),
-                      Text('₱${item.total.toStringAsFixed(0)}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w800,
-                            fontSize: 14,
-                            color: AppTheme.chocolate,
-                          )),
                     ],
                   ),
-                );
-              },
-            ),
-          ),
+                )
+              : ListView.builder(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: widget.cart.length,
+                  itemBuilder: (_, i) {
+                    final item = widget.cart[i];
+                    return _CartItemCard(
+                      item: item,
+                      onRemove: () {
+                        widget.cart.removeAt(i);
+                        widget.onUpdate();
+                      },
+                      onQtyChanged: (newQty) {
+                        item.quantity = newQty;
+                        widget.onUpdate();
+                      },
+                    );
+                  },
+                ),
+        ),
+
+        // ── Bottom Checkout ──────────────────────────────────
+        if (widget.cart.isNotEmpty)
           Container(
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 16,
-              bottom: MediaQuery.of(context).padding.bottom + 16,
-            ),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
@@ -764,74 +1551,293 @@ class _CartTabState extends State<_CartTab> {
                 ),
               ],
             ),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '${_cart.totalCount} item${_cart.totalCount > 1 ? 's' : ''}',
-                      style: TextStyle(
-                        color: AppTheme.chocolate.withOpacity(0.6),
-                        fontSize: 14,
-                      ),
-                    ),
-                    Text(
-                      'Total: ₱${_cart.totalPrice.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
-                        color: AppTheme.darkChoco,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: _placeOrder,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppTheme.chocolate,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16)),
-                      elevation: 0,
-                    ),
-                    child: const Text('Place Order',
+            child: SafeArea(
+              top: false,
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${widget.cart.length} item${widget.cart.length > 1 ? 's' : ''} in cart',
                         style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                        )),
+                          color: AppTheme.chocolate.withOpacity(0.6),
+                          fontSize: 14,
+                        ),
+                      ),
+                      if (widget.total > 0)
+                        Text(
+                          '₱${widget.total.toInt()}',
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                            color: AppTheme.darkChoco,
+                          ),
+                        )
+                      else
+                        Text(
+                          'Price pending',
+                          style: TextStyle(
+                            color: AppTheme.chocolate.withOpacity(0.5),
+                            fontSize: 14,
+                          ),
+                        ),
+                    ],
                   ),
-                ),
-              ],
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _isPlacingOrder ? null : _placeAllOrders,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppTheme.chocolate,
+                        disabledBackgroundColor:
+                            AppTheme.chocolate.withOpacity(0.5),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                      child: _isPlacingOrder
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              'Place Order  🧁',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
       ],
     );
   }
 }
 
-// ── Profile Tab ───────────────────────────────────────────────────────────────
-class _ProfileTab extends StatelessWidget {
-  final VoidCallback onLogout;
-  final int notifCount; // ✅ NEW
-  final VoidCallback onNotifRead; // ✅ NEW
+// ── Cart Item Card ────────────────────────────────────────────────────────────
+class _CartItemCard extends StatelessWidget {
+  final CartItem item;
+  final VoidCallback onRemove;
+  final ValueChanged<int> onQtyChanged;
 
-  const _ProfileTab({
-    required this.onLogout,
-    required this.notifCount,
-    required this.onNotifRead,
+  const _CartItemCard({
+    required this.item,
+    required this.onRemove,
+    required this.onQtyChanged,
   });
 
   @override
   Widget build(BuildContext context) {
-    final fullName = AuthService.currentUser?['fullName'] ?? 'Guest';
-    final email = AuthService.currentUser?['email'] ?? 'No email';
-    final initial = fullName.isNotEmpty ? fullName[0].toUpperCase() : 'G';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: AppTheme.chocolate.withOpacity(0.06),
+            blurRadius: 8,
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: SizedBox(
+                  width: 56,
+                  height: 56,
+                  child: !item.isCustom &&
+                          item.product?.imageUrl != null &&
+                          item.product!.imageUrl!.isNotEmpty
+                      ? Image.network(
+                          '${ApiService.baseUrl}${item.product!.imageUrl}',
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: AppTheme.blush.withOpacity(0.3),
+                            child: Center(
+                              child: Text(
+                                item.displayEmoji,
+                                style: const TextStyle(fontSize: 24),
+                              ),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          color: AppTheme.blush.withOpacity(0.3),
+                          child: Center(
+                            child: Text(
+                              item.displayEmoji,
+                              style: const TextStyle(fontSize: 24),
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.displayName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        color: AppTheme.darkChoco,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    if (item.isCustom)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppTheme.gold.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          '⏳ Awaiting price quote',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: AppTheme.caramel,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      )
+                    else
+                      Text(
+                        '₱${item.lineTotal.toInt()}',
+                        style: const TextStyle(
+                          color: AppTheme.caramel,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.close,
+                      size: 16, color: Colors.redAccent),
+                ),
+              ),
+            ],
+          ),
+          if (!item.isCustom && item.deliveryDate != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppTheme.cream,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.calendar_today_outlined,
+                          size: 12, color: AppTheme.chocolate.withOpacity(0.5)),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${item.deliveryDate} at ${item.deliveryTime}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppTheme.chocolate.withOpacity(0.6),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (item.deliveryAddress != null &&
+                      item.deliveryAddress!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        Icon(Icons.location_on_outlined,
+                            size: 12,
+                            color: AppTheme.chocolate.withOpacity(0.5)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            item.deliveryAddress!,
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: AppTheme.chocolate.withOpacity(0.6),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+          if (!item.isCustom) ...[
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                _QtyControl(
+                  qty: item.quantity,
+                  onMinus: () {
+                    if (item.quantity > 1) {
+                      onQtyChanged(item.quantity - 1);
+                    } else {
+                      onRemove();
+                    }
+                  },
+                  onPlus: () => onQtyChanged(item.quantity + 1),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROFILE TAB
+// ═══════════════════════════════════════════════════════════════
+class _ProfileTab extends StatelessWidget {
+  final UserModel? user;
+  final VoidCallback onLogout;
+
+  const _ProfileTab({required this.user, required this.onLogout});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = user?.name ?? 'Guest';
+    final email = user?.email ?? '';
+    final phone = user?.phone;
 
     return SingleChildScrollView(
       child: Column(
@@ -864,18 +1870,14 @@ class _ProfileTab extends StatelessWidget {
                   ),
                   child: Center(
                     child: Text(
-                      initial,
-                      style: const TextStyle(
-                        fontSize: 40,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
+                      user?.avatarEmoji ?? '👤',
+                      style: const TextStyle(fontSize: 44),
                     ),
                   ),
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  fullName,
+                  name,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 22,
@@ -888,138 +1890,59 @@ class _ProfileTab extends StatelessWidget {
                   style: TextStyle(
                       color: Colors.white.withOpacity(0.6), fontSize: 14),
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _StatChip(label: 'Orders', value: '0'),
-                    const SizedBox(width: 12),
-                    _StatChip(label: 'Points', value: '0'),
-                  ],
-                ),
+                if (phone != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    phone,
+                    style: TextStyle(
+                        color: Colors.white.withOpacity(0.45), fontSize: 12),
+                  ),
+                ],
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // My Orders — navigates to MyOrdersScreen
                 _ProfileTile(
                   icon: Icons.receipt_long_outlined,
-                  label: 'My Order Status',
+                  label: 'My Orders',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const MyOrdersScreen()),
+                  ),
+                ),
+                // My Custom Orders — navigates to MyCustomOrdersScreen
+                _ProfileTile(
+                  icon: Icons.cake_outlined,
+                  label: 'My Custom Orders',
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
-                        builder: (_) => const OrderStatusScreen()),
+                        builder: (_) => const MyCustomOrdersScreen()),
                   ),
                 ),
                 _ProfileTile(
-                  icon: Icons.location_on_outlined,
-                  label: 'Delivery Addresses',
-                  onTap: () {
-                    showModalBottomSheet(
-                      context: context,
-                      shape: const RoundedRectangleBorder(
-                        borderRadius:
-                            BorderRadius.vertical(top: Radius.circular(24)),
-                      ),
-                      builder: (_) => Padding(
-                        padding: const EdgeInsets.all(28),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 4,
-                              decoration: BoxDecoration(
-                                color: Colors.grey.withOpacity(0.3),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                            ),
-                            const SizedBox(height: 20),
-                            const Icon(Icons.location_on_outlined,
-                                size: 48, color: Colors.grey),
-                            const SizedBox(height: 12),
-                            const Text('No Delivery Addresses',
-                                style: TextStyle(
-                                    fontSize: 16, fontWeight: FontWeight.w700)),
-                            const SizedBox(height: 6),
-                            const Text('You have no saved addresses yet.',
-                                style: TextStyle(
-                                    color: Colors.grey, fontSize: 13)),
-                            const SizedBox(height: 24),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-
-                // ✅ Notifications tile with conditional red dot badge
-                Container(
-                  margin: const EdgeInsets.only(bottom: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppTheme.chocolate.withOpacity(0.05),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: ListTile(
-                    onTap: () async {
-                      // ✅ Mark as read FIRST, then open screen
-                      onNotifRead();
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => const NotificationsScreen()),
-                      );
-                    },
-                    leading: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: AppTheme.cream,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.notifications_outlined,
-                          color: AppTheme.darkChoco, size: 20),
-                    ),
-                    title: const Text('Notifications',
-                        style: TextStyle(
-                          color: AppTheme.darkChoco,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        )),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        // ✅ Red dot — only shows when notifCount > 0
-                        if (notifCount > 0)
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: Colors.redAccent,
-                              shape: BoxShape.circle,
-                              border:
-                                  Border.all(color: Colors.white, width: 1.5),
-                            ),
-                          ),
-                        if (notifCount > 0) const SizedBox(width: 8),
-                        Icon(Icons.arrow_forward_ios_rounded,
-                            size: 14,
-                            color: AppTheme.chocolate.withOpacity(0.3)),
-                      ],
-                    ),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+                    icon: Icons.location_on_outlined,
+                    label: 'Delivery Addresses',
+                    onTap: () {}),
+                _ProfileTile(
+                    icon: Icons.notifications_outlined,
+                    label: 'Notifications',
+                    onTap: () {}),
+                // Help & Support — navigates to HelpSupportScreen
+                _ProfileTile(
+                  icon: Icons.help_outline_rounded,
+                  label: 'Help & Support',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const HelpSupportScreen()),
                   ),
                 ),
-
                 const SizedBox(height: 8),
                 _ProfileTile(
                   icon: Icons.logout_rounded,
@@ -1028,12 +1951,14 @@ class _ProfileTab extends StatelessWidget {
                   isDestructive: true,
                 ),
                 const SizedBox(height: 30),
-                Text(
-                  'Sweet Cengsations v2026 ✦',
-                  style: TextStyle(
-                    color: AppTheme.chocolate.withOpacity(0.3),
-                    fontSize: 12,
-                    letterSpacing: 1,
+                Center(
+                  child: Text(
+                    'Sweet Cengsations v1.0.0 ✦',
+                    style: TextStyle(
+                      color: AppTheme.chocolate.withOpacity(0.3),
+                      fontSize: 12,
+                      letterSpacing: 1,
+                    ),
                   ),
                 ),
               ],
@@ -1045,38 +1970,6 @@ class _ProfileTab extends StatelessWidget {
   }
 }
 
-// ── Stat Chip ─────────────────────────────────────────────────────────────────
-class _StatChip extends StatelessWidget {
-  final String label;
-  final String value;
-  const _StatChip({required this.label, required this.value});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withOpacity(0.2)),
-      ),
-      child: Column(
-        children: [
-          Text(value,
-              style: const TextStyle(
-                color: AppTheme.gold,
-                fontWeight: FontWeight.w800,
-                fontSize: 18,
-              )),
-          Text(label,
-              style: const TextStyle(color: Colors.white60, fontSize: 11)),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Profile Tile ──────────────────────────────────────────────────────────────
 class _ProfileTile extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1117,31 +2010,36 @@ class _ProfileTile extends StatelessWidget {
           ),
           child: Icon(icon, color: color, size: 20),
         ),
-        title: Text(label,
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w600,
-              fontSize: 14,
-            )),
-        trailing: Icon(Icons.arrow_forward_ios_rounded,
-            size: 14, color: AppTheme.chocolate.withOpacity(0.3)),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w600,
+            fontSize: 14,
+          ),
+        ),
+        trailing: Icon(
+          Icons.arrow_forward_ios_rounded,
+          size: 14,
+          color: AppTheme.chocolate.withOpacity(0.3),
+        ),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );
   }
 }
 
-// ── Bottom Nav ────────────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// BOTTOM NAV  (3 tabs: Home | Cart | Profile)
+// ═══════════════════════════════════════════════════════════════
 class _BottomNav extends StatelessWidget {
   final int currentIndex;
   final int cartCount;
-  final int notifCount; // NEW
   final ValueChanged<int> onTap;
 
   const _BottomNav({
     required this.currentIndex,
     required this.cartCount,
-    required this.notifCount, // NEW
     required this.onTap,
   });
 
@@ -1164,37 +2062,33 @@ class _BottomNav extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _NavItem(
-              icon: Icons.home_outlined,
-              activeIcon: Icons.home_rounded,
-              label: 'Home',
-              index: 0,
-              current: currentIndex,
-              onTap: onTap),
-          _NavItem(
-              icon: Icons.explore_outlined,
-              activeIcon: Icons.explore_rounded,
-              label: 'Explore',
-              index: 1,
-              current: currentIndex,
-              onTap: onTap),
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home_rounded,
+            label: 'Home',
+            index: 0,
+            current: currentIndex,
+            onTap: onTap,
+          ),
           _NavItemCart(
-              cartCount: cartCount,
-              index: 2,
-              current: currentIndex,
-              onTap: onTap),
-          // ✅ NEW: Profile nav item with red dot badge
-          _NavItemProfile(
-              notifCount: notifCount,
-              index: 3,
-              current: currentIndex,
-              onTap: onTap),
+            cartCount: cartCount,
+            index: 1,
+            current: currentIndex,
+            onTap: onTap,
+          ),
+          _NavItem(
+            icon: Icons.person_outline_rounded,
+            activeIcon: Icons.person_rounded,
+            label: 'Profile',
+            index: 2,
+            current: currentIndex,
+            onTap: onTap,
+          ),
         ],
       ),
     );
   }
 }
 
-// ── Nav Item ──────────────────────────────────────────────────────────────────
 class _NavItem extends StatelessWidget {
   final IconData icon;
   final IconData activeIcon;
@@ -1219,24 +2113,28 @@ class _NavItem extends StatelessWidget {
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(isActive ? activeIcon : icon,
+            Icon(
+              isActive ? activeIcon : icon,
+              color: isActive
+                  ? AppTheme.chocolate
+                  : AppTheme.chocolate.withOpacity(0.35),
+              size: 26,
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
                 color: isActive
                     ? AppTheme.chocolate
                     : AppTheme.chocolate.withOpacity(0.35),
-                size: 26),
-            const SizedBox(height: 3),
-            Text(label,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isActive
-                      ? AppTheme.chocolate
-                      : AppTheme.chocolate.withOpacity(0.35),
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                )),
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
           ],
         ),
       ),
@@ -1244,7 +2142,6 @@ class _NavItem extends StatelessWidget {
   }
 }
 
-// Nav Item Cart (with badge)
 class _NavItemCart extends StatelessWidget {
   final int cartCount;
   final int index;
@@ -1265,11 +2162,12 @@ class _NavItemCart extends StatelessWidget {
       onTap: () => onTap(index),
       behavior: HitTestBehavior.opaque,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
+              clipBehavior: Clip.none,
               children: [
                 Icon(
                   isActive
@@ -1282,105 +2180,40 @@ class _NavItemCart extends StatelessWidget {
                 ),
                 if (cartCount > 0)
                   Positioned(
-                    right: 0,
-                    top: 0,
+                    top: -5,
+                    right: -7,
                     child: Container(
-                      width: 14,
-                      height: 14,
+                      width: 16,
+                      height: 16,
                       decoration: const BoxDecoration(
-                        color: AppTheme.gold,
+                        color: AppTheme.caramel,
                         shape: BoxShape.circle,
                       ),
                       child: Center(
-                        child: Text('$cartCount',
-                            style: const TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            )),
+                        child: Text(
+                          '$cartCount',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
                       ),
                     ),
                   ),
               ],
             ),
             const SizedBox(height: 3),
-            Text('Cart',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isActive
-                      ? AppTheme.chocolate
-                      : AppTheme.chocolate.withOpacity(0.35),
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                )),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// Nav Item Profile (with red dot badge)
-class _NavItemProfile extends StatelessWidget {
-  final int notifCount;
-  final int index;
-  final int current;
-  final ValueChanged<int> onTap;
-
-  const _NavItemProfile({
-    required this.notifCount,
-    required this.index,
-    required this.current,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isActive = index == current;
-    return GestureDetector(
-      onTap: () => onTap(index),
-      behavior: HitTestBehavior.opaque,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Stack(
-              children: [
-                Icon(
-                  isActive
-                      ? Icons.person_rounded
-                      : Icons.person_outline_rounded,
-                  color: isActive
-                      ? AppTheme.chocolate
-                      : AppTheme.chocolate.withOpacity(0.35),
-                  size: 26,
-                ),
-                // ✅ Red dot — shows when there are unread notifications
-                if (notifCount > 0)
-                  Positioned(
-                    right: 0,
-                    top: 0,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: Colors.redAccent,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.5),
-                      ),
-                    ),
-                  ),
-              ],
+            Text(
+              'Cart',
+              style: TextStyle(
+                fontSize: 10,
+                color: isActive
+                    ? AppTheme.chocolate
+                    : AppTheme.chocolate.withOpacity(0.35),
+                fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+              ),
             ),
-            const SizedBox(height: 3),
-            Text('Profile',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: isActive
-                      ? AppTheme.chocolate
-                      : AppTheme.chocolate.withOpacity(0.35),
-                  fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-                )),
           ],
         ),
       ),

@@ -1,24 +1,28 @@
-class Product {
-  final String id;
-  final String name;
+class ProductModel {
+  final int productId;
+  final String productName;
+  final String description;
   final double price;
-  final String category;
-  final String emoji;
+  final String? imageUrl;
+  final bool isAvailable;
 
-  const Product({
-    required this.id,
-    required this.name,
+  const ProductModel({
+    required this.productId,
+    required this.productName,
+    required this.description,
     required this.price,
-    required this.category,
-    required this.emoji,
+    this.imageUrl,
+    this.isAvailable = true,
   });
-}
 
-class CartItem {
-  final Product product;
-  int quantity;
-
-  CartItem({required this.product, this.quantity = 1});
-
-  double get subtotal => product.price * quantity;
+  factory ProductModel.fromJson(Map<String, dynamic> json) {
+    return ProductModel(
+      productId: json['productId'] ?? 0,
+      productName: json['productName'] ?? '',
+      description: json['description'] ?? '',
+      price: (json['price'] ?? 0).toDouble(),
+      imageUrl: json['imageUrl'],
+      isAvailable: json['isAvailable'] ?? true,
+    );
+  }
 }

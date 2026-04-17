@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
-import '../../../services/auth_service.dart';
+import '../../../services/api_service.dart';
+import '../../../models/user_session.dart';
 import 'register_screen.dart';
 import 'dashboard_screen.dart';
 
@@ -70,54 +71,51 @@ class _LoginScreenState extends State<LoginScreen>
   }
 
   Future<void> _handleLogin() async {
-    try {
-      if (!_formKey.currentState!.validate()) return;
-      setState(() => _isLoading = true);
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _isLoading = true);
 
-      final result = await AuthService.loginUser(
+    try {
+      final result = await ApiService.loginUser(
         email: _emailController.text.trim(),
         password: _passwordController.text,
       );
 
+      if (!mounted) return;
       setState(() => _isLoading = false);
 
-      if (result['success']) {
-        print('USER DATA: ${AuthService.currentUser}');
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            PageRouteBuilder(
-              pageBuilder: (_, __, ___) => const DashboardScreen(),
-              transitionsBuilder: (_, anim, __, child) =>
-                  FadeTransition(opacity: anim, child: child),
-              transitionDuration: const Duration(milliseconds: 600),
-            ),
-          );
-        }
+      if (result['success'] == true) {
+        // UserSession is already set inside AuthService.loginUser
+        // Navigate to dashboard — it will read from UserSession automatically
+        Navigator.pushReplacement(
+          context,
+          PageRouteBuilder(
+            pageBuilder: (_, __, ___) => const DashboardScreen(),
+            transitionsBuilder: (_, anim, __, child) =>
+                FadeTransition(opacity: anim, child: child),
+            transitionDuration: const Duration(milliseconds: 600),
+          ),
+        );
       } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              // ✅ FIX: Clear error message for wrong email/password
-              content: const Text(
-                'Wrong email or password. Please try again.',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              backgroundColor: AppTheme.deepCaramel,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              result['message'] ?? 'Wrong email or password. Please try again.',
+              style: const TextStyle(fontWeight: FontWeight.w600),
             ),
-          );
-        }
+            backgroundColor: AppTheme.deepCaramel,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
       }
     } catch (e) {
-      setState(() => _isLoading = false);
       if (!mounted) return;
+      setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text(
-            'Incorrect email or password. Try again.',
+            'Something went wrong. Please try again.',
             style: TextStyle(fontWeight: FontWeight.w600),
           ),
           backgroundColor: AppTheme.deepCaramel,
@@ -152,7 +150,6 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
                 child: Stack(
                   children: [
-                    // Dot pattern overlay
                     Positioned.fill(
                       child: CustomPaint(painter: _DotPatternPainter()),
                     ),
@@ -347,15 +344,12 @@ class _LoginScreenState extends State<LoginScreen>
                             width: double.infinity,
                             height: 54,
                             child: ElevatedButton(
-                              onPressed: () {
-                                debugPrint('string');
-                                _handleLogin();
-                              },
-                              // onPressed: () async =>
-                              //     _isLoading ? null : _handleLogin,
+                              onPressed: _isLoading ? null : _handleLogin,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.chocolate,
                                 foregroundColor: Colors.white,
+                                disabledBackgroundColor:
+                                    AppTheme.chocolate.withOpacity(0.6),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(16),
                                 ),
@@ -441,6 +435,34 @@ class _LoginScreenState extends State<LoginScreen>
                                     color: AppTheme.caramel,
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        // ── Demo hint ──────────────────────────
+                        const SizedBox(height: 20),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppTheme.cream,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: AppTheme.caramel.withOpacity(0.2)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Text('💡', style: TextStyle(fontSize: 14)),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Demo: demo@sweet.com / password123',
+                                  style: TextStyle(
+                                    color: AppTheme.chocolate.withOpacity(0.55),
+                                    fontSize: 11,
+                                    fontStyle: FontStyle.italic,
                                   ),
                                 ),
                               ),
