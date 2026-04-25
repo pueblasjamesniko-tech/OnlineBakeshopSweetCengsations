@@ -8,7 +8,7 @@ import '../models/cart_item.dart';
 
 class ApiService {
   static const String baseUrl =
-      'http://192.168.1.14:5112'; // one place to change
+      'http://10.224.229.192:5112'; // one place to change
 
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -174,6 +174,7 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
+        print('response: $body');
         if (body['status'] == 200 && body['data'] != null) {
           final List<dynamic> list = body['data'];
           return list.map((e) => ProductModel.fromJson(e)).toList();

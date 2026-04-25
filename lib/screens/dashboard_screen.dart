@@ -502,11 +502,19 @@ class _HomeTab extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               sliver: SliverGrid(
                 delegate: SliverChildBuilderDelegate(
-                  (_, i) => _ProductCard(
-                    product: products[i],
-                    onAddToCart: onAddToCart,
-                    onPlaceNow: onPlaceNow,
-                  ),
+                  (_, i) {
+                    debugPrint('productImage: ${products[i].imageUrl}');
+                    return _ProductCard(
+                      product: products[i],
+                      onAddToCart: onAddToCart,
+                      onPlaceNow: onPlaceNow,
+                    );
+                  },
+                  // (_, i) => _ProductCard(
+                  //   product: products[i],
+                  //   onAddToCart: onAddToCart,
+                  //   onPlaceNow: onPlaceNow,
+                  // ),
                   childCount: products.length,
                 ),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -638,6 +646,7 @@ class _ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    debugPrint('product: $product');
     return GestureDetector(
       onTap: () => _showDetail(context),
       child: Container(
@@ -666,9 +675,18 @@ class _ProductCard extends StatelessWidget {
                     ? Image.network(
                         '${ApiService.baseUrl}${product.imageUrl}',
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _PlaceholderImage(),
+                        // errorBuilder: (_, __, stacktrace) {
+                        //   debugPrint('image: $stacktrace');
+                        //   return _PlaceholderImage();
+                        // },
                       )
-                    : _PlaceholderImage(),
+                    : const Icon(Icons.arrow_back),
+                // ? Image.network(
+                //     '${ApiService.baseUrl}${product.imageUrl}',
+                //     fit: BoxFit.cover,
+                //     errorBuilder: (_, __, ___) => _PlaceholderImage(),
+                //   )
+                // : _PlaceholderImage(),
               ),
             ),
 

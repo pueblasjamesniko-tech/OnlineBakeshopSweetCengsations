@@ -36,4 +36,9 @@ class ProductModel {
       'isAvailable': isAvailable,
     };
   }
+
+  @override
+  String toString() {
+    return 'productId: $productId, productName: $productName, description: $description, price: $price, imageUrl: $imageUrl, isAvailable: $isAvailable';
+  }
 }

@@ -1,11 +1,14 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
 import '../../../theme/app_theme.dart';
 import '../../../models/cart_item.dart';
 import '../../../models/user_session.dart';
 import '../../../services/api_service.dart';
 
 class CustomOrderScreen extends StatefulWidget {
-  final String orderType; // "Cake" or "Cupcake"
+  final String orderType;
   final ValueChanged<CartItem> onSubmitted;
 
   const CustomOrderScreen({
@@ -22,7 +25,6 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _isSubmitting = false;
 
-  // ── Form controllers ───────────────────────────────────────
   String? _selectedFlavor;
   String? _selectedSize;
   final _colorThemeCtrl = TextEditingController();
@@ -33,7 +35,10 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
   TimeOfDay? _deliveryTime;
   final _addressCtrl = TextEditingController();
 
-  // ── Options ────────────────────────────────────────────────
+  // ── Reference image ───────────────────────────────────────
+  File? _referenceImageFile;
+  String? _referenceImageUrl; // path returned by server after upload
+
   List<String> get _flavors => [
         'Chocolate',
         'Vanilla',
@@ -56,7 +61,6 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
 
   String get _emoji => widget.orderType == 'Cake' ? '🎂' : '🧁';
 
-  // ── Formatted helpers ──────────────────────────────────────
   String get _formattedDate => _deliveryDate == null
       ? 'Select date'
       : '${_deliveryDate!.year}-${_deliveryDate!.month.toString().padLeft(2, '0')}-${_deliveryDate!.day.toString().padLeft(2, '0')}';
@@ -70,7 +74,6 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
       initialDate: DateTime.now().add(const Duration(days: 3)),
       firstDate: DateTime.now().add(const Duration(days: 1)),
       lastDate: DateTime.now().add(const Duration(days: 90)),
-      helpText: 'Select Delivery Date',
       builder: (ctx, child) => Theme(
         data: ThemeData.light().copyWith(
           colorScheme: const ColorScheme.light(primary: AppTheme.chocolate),
@@ -95,6 +98,44 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     if (picked != null) setState(() => _deliveryTime = picked);
   }
 
+  // ── Pick reference image from gallery ─────────────────────
+  Future<void> _pickReferenceImage() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (picked != null) {
+      setState(() => _referenceImageFile = File(picked.path));
+    }
+  }
+
+  // ── Upload reference image to API ─────────────────────────
+  Future<String?> _uploadReferenceImage() async {
+    if (_referenceImageFile == null) return null;
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${ApiService.baseUrl}/Upload/UploadReferenceImage'),
+      );
+      request.files.add(await http.MultipartFile.fromPath(
+        'file',
+        _referenceImageFile!.path,
+      ));
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 200) {
+        final data = response.body;
+        // Parse ImageUrl from response
+        final match = RegExp(r'"ImageUrl"\s*:\s*"([^"]+)"').firstMatch(data);
+        return match?.group(1);
+      }
+    } catch (e) {
+      print('Upload reference image error: $e');
+    }
+    return null;
+  }
+
   Future<void> _submitOrder() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -117,48 +158,33 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
 
     setState(() => _isSubmitting = true);
 
+    // Upload reference image first if selected
+    if (_referenceImageFile != null) {
+      _referenceImageUrl = await _uploadReferenceImage();
+    }
+
     final userId =
         int.tryParse(UserSession.instance.currentUser?.id ?? '0') ?? 0;
-
-    // Debug: print what we're sending
-    print('=== CUSTOM ORDER SUBMIT ===');
-    print('userId: $userId');
-    print('orderType: ${widget.orderType}');
-    print('flavor: $_selectedFlavor');
-    print('size: $_selectedSize');
-    print(
-        'colorTheme: ${_colorThemeCtrl.text.trim().isEmpty ? 'N/A' : _colorThemeCtrl.text.trim()}');
-    print('messageOnCake: ${_messageCtrl.text.trim()}');
-    print('numberOfLayers: ${widget.orderType == 'Cake' ? _layers : 1}');
-    print('specialNotes: ${_notesCtrl.text.trim()}');
-    print('deliveryDate: $_formattedDate');
-    print('deliveryTime: $_formattedTime');
-    print('deliveryAddress: ${_addressCtrl.text.trim()}');
-    print('===========================');
 
     final result = await ApiService.createCustomOrder(
       userId: userId,
       orderType: widget.orderType,
       flavor: _selectedFlavor!,
       size: _selectedSize!,
-      // Send 'N/A' if color theme is empty so backend doesn't reject it
       colorTheme: _colorThemeCtrl.text.trim().isEmpty
           ? 'N/A'
           : _colorThemeCtrl.text.trim(),
       messageOnCake: _messageCtrl.text.trim(),
-      // Always send numberOfLayers — cupcakes default to 1
       numberOfLayers: widget.orderType == 'Cake' ? _layers : 1,
       specialNotes:
           _notesCtrl.text.trim().isEmpty ? 'None' : _notesCtrl.text.trim(),
       deliveryDate: _formattedDate,
       deliveryTime: _formattedTime,
       deliveryAddress: _addressCtrl.text.trim(),
+      referenceImage: _referenceImageUrl ?? '',
     );
 
-    print('CUSTOM ORDER RESULT: $result');
-
     setState(() => _isSubmitting = false);
-
     if (!mounted) return;
 
     if (result['success'] == true) {
@@ -178,6 +204,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
           'deliveryDate': _formattedDate,
           'deliveryTime': _formattedTime,
           'deliveryAddress': _addressCtrl.text.trim(),
+          'referenceImage': _referenceImageUrl ?? '',
         },
       );
       widget.onSubmitted(cartItem);
@@ -253,9 +280,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                               Text(
                                 'Design your perfect ${widget.orderType.toLowerCase()}',
                                 style: const TextStyle(
-                                  color: Colors.white60,
-                                  fontSize: 13,
-                                ),
+                                    color: Colors.white60, fontSize: 13),
                               ),
                             ],
                           ),
@@ -277,13 +302,10 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ═══════════════════════════════════════════
-                    // SECTION: Preferences
-                    // ═══════════════════════════════════════════
                     _SectionHeader(title: '✨ ${widget.orderType} Preferences'),
                     const SizedBox(height: 14),
 
-                    // Flavor picker
+                    // ── Flavor ───────────────────────────────────
                     _FormCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,7 +366,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Size picker
+                    // ── Size ─────────────────────────────────────
                     _FormCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -405,7 +427,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Number of Layers (Cake only)
+                    // ── Layers (Cake only) ────────────────────────
                     if (widget.orderType == 'Cake') ...[
                       _FormCard(
                         child: Row(
@@ -451,18 +473,16 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                       const SizedBox(height: 12),
                     ],
 
-                    // Color Theme
+                    // ── Color Theme ──────────────────────────────
                     _FormCard(
                       child: TextFormField(
                         controller: _colorThemeCtrl,
                         decoration: InputDecoration(
                           labelText: 'Color Theme (optional)',
                           hintText: 'e.g. Pastel pink and gold',
-                          prefixIcon: Icon(
-                            Icons.palette_outlined,
-                            color: AppTheme.caramel.withOpacity(0.7),
-                            size: 20,
-                          ),
+                          prefixIcon: Icon(Icons.palette_outlined,
+                              color: AppTheme.caramel.withOpacity(0.7),
+                              size: 20),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -472,7 +492,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Message on Cake
+                    // ── Message on Cake ──────────────────────────
                     _FormCard(
                       child: TextFormField(
                         controller: _messageCtrl,
@@ -480,11 +500,9 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                           labelText:
                               'Message on ${widget.orderType} (optional)',
                           hintText: 'e.g. Happy Birthday, Maria! 🎉',
-                          prefixIcon: Icon(
-                            Icons.celebration_outlined,
-                            color: AppTheme.caramel.withOpacity(0.7),
-                            size: 20,
-                          ),
+                          prefixIcon: Icon(Icons.celebration_outlined,
+                              color: AppTheme.caramel.withOpacity(0.7),
+                              size: 20),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -494,7 +512,95 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // Special Notes
+                    // ── Reference Image ──────────────────────────
+                    _FormCard(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _FieldLabel('Reference Image (optional)'),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Upload a photo of your preferred cake design',
+                            style: TextStyle(
+                              color: AppTheme.chocolate.withOpacity(0.45),
+                              fontSize: 11,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          GestureDetector(
+                            onTap: _pickReferenceImage,
+                            child: _referenceImageFile != null
+                                ? Stack(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Image.file(
+                                          _referenceImageFile!,
+                                          height: 160,
+                                          width: double.infinity,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: GestureDetector(
+                                          onTap: () => setState(
+                                              () => _referenceImageFile = null),
+                                          child: Container(
+                                            width: 28,
+                                            height: 28,
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  Colors.black.withOpacity(0.5),
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(Icons.close,
+                                                color: Colors.white, size: 16),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : Container(
+                                    height: 100,
+                                    width: double.infinity,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.cream,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color:
+                                            AppTheme.roseDust.withOpacity(0.4),
+                                        style: BorderStyle.solid,
+                                      ),
+                                    ),
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.add_photo_alternate_outlined,
+                                            color: AppTheme.chocolate
+                                                .withOpacity(0.4),
+                                            size: 32),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'Tap to upload reference photo',
+                                          style: TextStyle(
+                                            color: AppTheme.chocolate
+                                                .withOpacity(0.45),
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Special Notes ────────────────────────────
                     _FormCard(
                       child: TextFormField(
                         controller: _notesCtrl,
@@ -503,11 +609,9 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                           labelText: 'Special Notes (optional)',
                           hintText:
                               'Allergies, special requests, design reference...',
-                          prefixIcon: Icon(
-                            Icons.note_alt_outlined,
-                            color: AppTheme.caramel.withOpacity(0.7),
-                            size: 20,
-                          ),
+                          prefixIcon: Icon(Icons.note_alt_outlined,
+                              color: AppTheme.caramel.withOpacity(0.7),
+                              size: 20),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -518,9 +622,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
 
                     const SizedBox(height: 24),
 
-                    // ═══════════════════════════════════════════
-                    // SECTION: Delivery Details
-                    // ═══════════════════════════════════════════
+                    // ── Delivery Details ─────────────────────────
                     const _SectionHeader(title: '🚚 Delivery Details'),
                     const SizedBox(height: 14),
 
@@ -552,11 +654,9 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                         maxLines: 2,
                         decoration: InputDecoration(
                           labelText: 'Delivery Address *',
-                          prefixIcon: Icon(
-                            Icons.location_on_outlined,
-                            color: AppTheme.caramel.withOpacity(0.7),
-                            size: 20,
-                          ),
+                          prefixIcon: Icon(Icons.location_on_outlined,
+                              color: AppTheme.caramel.withOpacity(0.7),
+                              size: 20),
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -601,7 +701,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
 
                     const SizedBox(height: 24),
 
-                    // ── Submit Button ─────────────────────────────
+                    // ── Submit ───────────────────────────────────
                     SizedBox(
                       width: double.infinity,
                       height: 56,
@@ -613,8 +713,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                               AppTheme.chocolate.withOpacity(0.5),
                           foregroundColor: Colors.white,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
+                              borderRadius: BorderRadius.circular(16)),
                           elevation: 0,
                         ),
                         child: _isSubmitting
@@ -622,9 +721,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                                 width: 22,
                                 height: 22,
                                 child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
+                                    strokeWidth: 2, color: Colors.white),
                               )
                             : Row(
                                 mainAxisAlignment: MainAxisAlignment.center,
@@ -635,9 +732,8 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                                   const Text(
                                     'Submit Custom Order',
                                     style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700,
-                                    ),
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700),
                                   ),
                                 ],
                               ),
@@ -655,66 +751,50 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
   }
 }
 
-// ── Helper Widgets ────────────────────────────────────────────────────────────
+// ── Helper Widgets (same as before, kept intact) ──────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String title;
   const _SectionHeader({required this.title});
-
   @override
-  Widget build(BuildContext context) {
-    return Text(
-      title,
+  Widget build(BuildContext context) => Text(title,
       style: const TextStyle(
-        fontSize: 17,
-        fontWeight: FontWeight.w800,
-        color: AppTheme.darkChoco,
-      ),
-    );
-  }
+          fontSize: 17,
+          fontWeight: FontWeight.w800,
+          color: AppTheme.darkChoco));
 }
 
 class _FieldLabel extends StatelessWidget {
   final String text;
   const _FieldLabel(this.text);
-
   @override
-  Widget build(BuildContext context) {
-    return Text(
-      text,
+  Widget build(BuildContext context) => Text(text,
       style: TextStyle(
-        color: AppTheme.chocolate.withOpacity(0.55),
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-        letterSpacing: 0.3,
-      ),
-    );
-  }
+          color: AppTheme.chocolate.withOpacity(0.55),
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.3));
 }
 
 class _FormCard extends StatelessWidget {
   final Widget child;
   const _FormCard({required this.child});
-
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: AppTheme.chocolate.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
+  Widget build(BuildContext context) => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+                color: AppTheme.chocolate.withOpacity(0.05),
+                blurRadius: 8,
+                offset: const Offset(0, 3))
+          ],
+        ),
+        child: child,
+      );
 }
 
 class _TapRow extends StatelessWidget {
@@ -722,14 +802,11 @@ class _TapRow extends StatelessWidget {
   final String value;
   final IconData icon;
   final VoidCallback onTap;
-
-  const _TapRow({
-    required this.label,
-    required this.value,
-    required this.icon,
-    required this.onTap,
-  });
-
+  const _TapRow(
+      {required this.label,
+      required this.value,
+      required this.icon,
+      required this.onTap});
   @override
   Widget build(BuildContext context) {
     final isPlaceholder = value.startsWith('Select');
@@ -737,40 +814,29 @@ class _TapRow extends StatelessWidget {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Icon(icon, color: AppTheme.caramel.withOpacity(0.7), size: 20),
-            const SizedBox(width: 12),
-            Expanded(
+        child: Row(children: [
+          Icon(icon, color: AppTheme.caramel.withOpacity(0.7), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                Text(label,
                     style: TextStyle(
-                      color: AppTheme.chocolate.withOpacity(0.5),
-                      fontSize: 11,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    value,
+                        color: AppTheme.chocolate.withOpacity(0.5),
+                        fontSize: 11)),
+                const SizedBox(height: 2),
+                Text(value,
                     style: TextStyle(
-                      color: isPlaceholder
-                          ? AppTheme.chocolate.withOpacity(0.35)
-                          : AppTheme.darkChoco,
-                      fontSize: 14,
-                      fontWeight:
-                          isPlaceholder ? FontWeight.w400 : FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Icon(Icons.arrow_drop_down,
-                color: AppTheme.caramel.withOpacity(0.6)),
-          ],
-        ),
+                        color: isPlaceholder
+                            ? AppTheme.chocolate.withOpacity(0.35)
+                            : AppTheme.darkChoco,
+                        fontSize: 14,
+                        fontWeight:
+                            isPlaceholder ? FontWeight.w400 : FontWeight.w600)),
+              ])),
+          Icon(Icons.arrow_drop_down, color: AppTheme.caramel.withOpacity(0.6)),
+        ]),
       ),
     );
   }
@@ -780,26 +846,22 @@ class _QBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   final bool filled;
-
   const _QBtn({required this.icon, required this.onTap, this.filled = false});
-
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 34,
-        height: 34,
-        decoration: BoxDecoration(
-          color: filled ? AppTheme.chocolate : AppTheme.cream,
-          borderRadius: BorderRadius.circular(10),
-          border: filled
-              ? null
-              : Border.all(color: AppTheme.roseDust.withOpacity(0.4)),
+  Widget build(BuildContext context) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 34,
+          height: 34,
+          decoration: BoxDecoration(
+            color: filled ? AppTheme.chocolate : AppTheme.cream,
+            borderRadius: BorderRadius.circular(10),
+            border: filled
+                ? null
+                : Border.all(color: AppTheme.roseDust.withOpacity(0.4)),
+          ),
+          child: Icon(icon,
+              size: 18, color: filled ? Colors.white : AppTheme.chocolate),
         ),
-        child: Icon(icon,
-            size: 18, color: filled ? Colors.white : AppTheme.chocolate),
-      ),
-    );
-  }
+      );
 }
