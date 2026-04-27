@@ -3,6 +3,7 @@ class UserModel {
   final String name;
   final String email;
   final String? avatarEmoji;
+  final String? profilePicture;
   final int orderCount;
   final int favouriteCount;
   final int points;
@@ -15,6 +16,7 @@ class UserModel {
     required this.name,
     required this.email,
     this.avatarEmoji,
+    this.profilePicture,
     this.orderCount = 0,
     this.favouriteCount = 0,
     this.points = 0,

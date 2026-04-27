@@ -84,8 +84,6 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() => _isLoading = false);
 
       if (result['success'] == true) {
-        // UserSession is already set inside AuthService.loginUser
-        // Navigate to dashboard — it will read from UserSession automatically
         Navigator.pushReplacement(
           context,
           PageRouteBuilder(
@@ -140,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen>
             children: [
               // ── Top hero ───────────────────────────────────
               Container(
-                height: size.height * 0.40,
+                height: size.height * 0.42,
                 decoration: const BoxDecoration(
                   gradient: AppTheme.chocolateGradient,
                   borderRadius: BorderRadius.only(
@@ -155,20 +153,35 @@ class _LoginScreenState extends State<LoginScreen>
                     ),
                     Padding(
                       padding:
-                          const EdgeInsets.only(top: 60, left: 28, right: 28),
+                          const EdgeInsets.only(top: 56, left: 28, right: 28),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // ── Logo row ───────────────────────
                           Row(
                             children: [
+                              // Real logo in rounded square container
                               Container(
-                                padding: const EdgeInsets.all(10),
+                                width: 48,
+                                height: 48,
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.12),
+                                  color: Colors.white,
                                   borderRadius: BorderRadius.circular(14),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.12),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
                                 ),
-                                child: const Text('🧁',
-                                    style: TextStyle(fontSize: 26)),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Image.asset(
+                                    'assets/images/bakeshop_logo.jpg',
+                                    fit: BoxFit.cover,
+                                  ),
+                                ),
                               ),
                               const SizedBox(width: 12),
                               Column(
@@ -223,7 +236,7 @@ class _LoginScreenState extends State<LoginScreen>
 
               // ── Form card ──────────────────────────────────
               Positioned(
-                top: size.height * 0.34,
+                top: size.height * 0.36,
                 left: 20,
                 right: 20,
                 child: Container(
@@ -442,7 +455,7 @@ class _LoginScreenState extends State<LoginScreen>
                           ),
                         ),
 
-                        // ── Demo hint ──────────────────────────
+                        // Demo hint
                         const SizedBox(height: 20),
                         Container(
                           padding: const EdgeInsets.all(12),

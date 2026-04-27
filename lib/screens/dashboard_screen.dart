@@ -5,6 +5,7 @@ import '../../../models/cart_item.dart';
 import '../../../models/user_session.dart';
 import '../../../models/UserModel.dart';
 import '../../../services/api_service.dart';
+import 'package:image_picker/image_picker.dart';
 
 import 'login_screen.dart';
 import 'custom_order_screen.dart';
@@ -21,14 +22,12 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen>
     with TickerProviderStateMixin {
-  // Tabs: 0 = Home, 1 = Cart, 2 = Profile
   int _navIndex = 0;
   final List<CartItem> _cart = [];
   List<ProductModel> _products = [];
   bool _isLoadingProducts = true;
   bool _cartLoaded = false;
 
-  // Key to access CartTab's state for triggering immediate checkout
   final GlobalKey<_CartTabState> _cartTabKey = GlobalKey<_CartTabState>();
 
   late AnimationController _fadeCtrl;
@@ -50,12 +49,10 @@ class _DashboardScreenState extends State<DashboardScreen>
   }
 
   Future<void> _initLoad() async {
-    // Load cart from storage first, then products in parallel
     await _loadPersistedCart();
     _loadProducts();
   }
 
-  /// Restore the user's cart from SharedPreferences
   Future<void> _loadPersistedCart() async {
     if (_userId.isEmpty) return;
     final saved = await ApiService.loadCart(_userId);
@@ -68,7 +65,6 @@ class _DashboardScreenState extends State<DashboardScreen>
     _cartLoaded = true;
   }
 
-  /// Persist the cart whenever it changes
   Future<void> _persistCart() async {
     if (_userId.isNotEmpty) {
       await ApiService.saveCart(_userId, _cart);
@@ -95,10 +91,7 @@ class _DashboardScreenState extends State<DashboardScreen>
 
   void _addToCart(CartItem item) {
     setState(() {
-      if (item.isCustom) {
-        // Custom orders are already saved to the server — don't add to cart
-        // Just show a snack so user knows to check My Custom Orders
-      } else {
+      if (!item.isCustom) {
         final existing = _cart.where(
           (c) =>
               !c.isCustom &&
@@ -116,10 +109,9 @@ class _DashboardScreenState extends State<DashboardScreen>
     _persistCart();
   }
 
-  // Called when user taps "Place Order Now" on a product
   void _placeNow(CartItem item) {
     _addToCart(item);
-    setState(() => _navIndex = 1); // Switch to cart tab (index 1 now)
+    setState(() => _navIndex = 1);
     Future.delayed(const Duration(milliseconds: 350), () {
       _cartTabKey.currentState?.triggerCheckout();
     });
@@ -157,8 +149,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                   builder: (_) => CustomOrderScreen(
                     orderType: type,
                     onSubmitted: (item) {
-                      // Custom order was already saved to server in CustomOrderScreen.
-                      // Just pop back — tell user to check My Custom Orders.
                       Navigator.pop(context);
                       ScaffoldMessenger.of(context).showSnackBar(
                         SnackBar(
@@ -199,7 +189,6 @@ class _DashboardScreenState extends State<DashboardScreen>
                 _persistCart();
               },
               onOrdersPlaced: () async {
-                // Clear persisted cart after all orders are placed
                 await ApiService.clearCart(_userId);
               },
             ),
@@ -208,6 +197,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             _ProfileTab(
               user: _user,
               onLogout: _handleLogout,
+              onUserUpdated: () => setState(() {}),
             ),
           ],
         ),
@@ -283,17 +273,29 @@ class _HomeTab extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
+                      // ── Real logo + brand name ──────────────
                       Row(
                         children: [
                           Container(
-                            width: 42,
-                            height: 42,
+                            width: 44,
+                            height: 44,
                             decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.15),
+                              color: Colors.white,
                               borderRadius: BorderRadius.circular(12),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.1),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                            child: const Center(
-                              child: Text('🧁', style: TextStyle(fontSize: 22)),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: Image.asset(
+                                'assets/images/bakeshop_logo.jpg',
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           ),
                           const SizedBox(width: 10),
@@ -320,6 +322,7 @@ class _HomeTab extends StatelessWidget {
                           ),
                         ],
                       ),
+                      // ── Cart icon ───────────────────────────
                       GestureDetector(
                         onTap: onCartTap,
                         child: Stack(
@@ -502,19 +505,11 @@ class _HomeTab extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               sliver: SliverGrid(
                 delegate: SliverChildBuilderDelegate(
-                  (_, i) {
-                    debugPrint('productImage: ${products[i].imageUrl}');
-                    return _ProductCard(
-                      product: products[i],
-                      onAddToCart: onAddToCart,
-                      onPlaceNow: onPlaceNow,
-                    );
-                  },
-                  // (_, i) => _ProductCard(
-                  //   product: products[i],
-                  //   onAddToCart: onAddToCart,
-                  //   onPlaceNow: onPlaceNow,
-                  // ),
+                  (_, i) => _ProductCard(
+                    product: products[i],
+                    onAddToCart: onAddToCart,
+                    onPlaceNow: onPlaceNow,
+                  ),
                   childCount: products.length,
                 ),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -619,7 +614,7 @@ class _CustomOrderCard extends StatelessWidget {
   }
 }
 
-// ── Product Card (2-column grid) ──────────────────────────────────────────────
+// ── Product Card ──────────────────────────────────────────────────────────────
 class _ProductCard extends StatelessWidget {
   final ProductModel product;
   final ValueChanged<CartItem> onAddToCart;
@@ -646,7 +641,6 @@ class _ProductCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('product: $product');
     return GestureDetector(
       onTap: () => _showDetail(context),
       child: Container(
@@ -664,7 +658,6 @@ class _ProductCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Image ──────────────────────────────────────────
             ClipRRect(
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(22)),
@@ -675,22 +668,21 @@ class _ProductCard extends StatelessWidget {
                     ? Image.network(
                         '${ApiService.baseUrl}${product.imageUrl}',
                         fit: BoxFit.cover,
-                        // errorBuilder: (_, __, stacktrace) {
-                        //   debugPrint('image: $stacktrace');
-                        //   return _PlaceholderImage();
-                        // },
+                        errorBuilder: (_, __, ___) => Container(
+                          color: AppTheme.blush.withOpacity(0.4),
+                          child: const Center(
+                            child: Text('🎂', style: TextStyle(fontSize: 40)),
+                          ),
+                        ),
                       )
-                    : const Icon(Icons.arrow_back),
-                // ? Image.network(
-                //     '${ApiService.baseUrl}${product.imageUrl}',
-                //     fit: BoxFit.cover,
-                //     errorBuilder: (_, __, ___) => _PlaceholderImage(),
-                //   )
-                // : _PlaceholderImage(),
+                    : Container(
+                        color: AppTheme.blush.withOpacity(0.4),
+                        child: const Center(
+                          child: Text('🎂', style: TextStyle(fontSize: 40)),
+                        ),
+                      ),
               ),
             ),
-
-            // ── Info ───────────────────────────────────────────
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
@@ -704,6 +696,17 @@ class _ProductCard extends StatelessWidget {
                         fontWeight: FontWeight.w700,
                         color: AppTheme.darkChoco,
                         height: 1.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      product.description,
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: AppTheme.chocolate.withOpacity(0.5),
+                        height: 1.3,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
@@ -749,18 +752,6 @@ class _ProductCard extends StatelessWidget {
   }
 }
 
-class _PlaceholderImage extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppTheme.blush.withOpacity(0.4),
-      child: const Center(
-        child: Text('🎂', style: TextStyle(fontSize: 40)),
-      ),
-    );
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 // PRODUCT DETAIL BOTTOM SHEET
 // ═══════════════════════════════════════════════════════════════
@@ -781,12 +772,10 @@ class _ProductDetailSheet extends StatefulWidget {
 
 class _ProductDetailSheetState extends State<_ProductDetailSheet> {
   int _qty = 1;
-
   DateTime? _deliveryDate;
   TimeOfDay? _deliveryTime;
   final _addressCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
-
   bool _showOrderForm = false;
   bool _placeDirectly = false;
   final _formKey = GlobalKey<FormState>();
@@ -892,97 +881,106 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
   @override
   Widget build(BuildContext context) {
     return DraggableScrollableSheet(
-      initialChildSize: _showOrderForm ? 0.92 : 0.65,
-      minChildSize: 0.4,
-      maxChildSize: 0.95,
+      initialChildSize: 1.0,
+      minChildSize: 0.6,
+      maxChildSize: 1.0,
       builder: (_, scrollCtrl) => Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        child: SingleChildScrollView(
-          controller: scrollCtrl,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Handle
-              Center(
-                child: Container(
-                  margin: const EdgeInsets.only(top: 12, bottom: 8),
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: AppTheme.roseDust.withOpacity(0.5),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                ),
-              ),
-
-              // ── Product Image ─────────────────────────────────
-              SizedBox(
-                width: double.infinity,
-                height: 200,
-                child: widget.product.imageUrl != null &&
-                        widget.product.imageUrl!.isNotEmpty
-                    ? Image.network(
-                        '${ApiService.baseUrl}${widget.product.imageUrl}',
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: AppTheme.blush.withOpacity(0.3),
+        decoration: const BoxDecoration(color: Colors.white),
+        child: Column(
+          children: [
+            Stack(
+              children: [
+                SizedBox(
+                  width: double.infinity,
+                  height: 280,
+                  child: widget.product.imageUrl != null &&
+                          widget.product.imageUrl!.isNotEmpty
+                      ? Image.network(
+                          '${ApiService.baseUrl}${widget.product.imageUrl}',
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: 280,
+                          errorBuilder: (_, __, ___) => Container(
+                            color: AppTheme.blush.withOpacity(0.4),
+                            child: const Center(
+                              child: Text('🎂', style: TextStyle(fontSize: 80)),
+                            ),
+                          ),
+                        )
+                      : Container(
+                          color: AppTheme.blush.withOpacity(0.4),
                           child: const Center(
-                            child: Text('🎂', style: TextStyle(fontSize: 64)),
+                            child: Text('🎂', style: TextStyle(fontSize: 80)),
                           ),
                         ),
-                      )
-                    : Container(
-                        color: AppTheme.blush.withOpacity(0.3),
-                        child: const Center(
-                          child: Text('🎂', style: TextStyle(fontSize: 64)),
-                        ),
+                ),
+                Positioned(
+                  top: MediaQuery.of(context).padding.top + 12,
+                  left: 16,
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.35),
+                        shape: BoxShape.circle,
                       ),
-              ),
-
-              Padding(
+                      child: const Icon(
+                        Icons.arrow_back_ios_new_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 16,
+                  right: 16,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppTheme.chocolate,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '₱${widget.product.price.toInt()}',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                controller: scrollCtrl,
                 padding: const EdgeInsets.all(22),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Name & Price ────────────────────────────
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            widget.product.productName,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.darkChoco,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          '₱${widget.product.price.toInt()}',
-                          style: const TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: AppTheme.caramel,
-                          ),
-                        ),
-                      ],
+                    Text(
+                      widget.product.productName,
+                      style: const TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: AppTheme.darkChoco,
+                      ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 8),
                     Text(
                       widget.product.description,
                       style: TextStyle(
                         color: AppTheme.chocolate.withOpacity(0.6),
                         fontSize: 14,
-                        height: 1.5,
+                        height: 1.6,
                       ),
                     ),
                     const SizedBox(height: 20),
-
-                    // ── Quantity ────────────────────────────────
                     Row(
                       children: [
                         const Text(
@@ -1003,7 +1001,7 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 6),
                     Text(
                       'Subtotal: ₱${(widget.product.price * _qty).toInt()}',
                       style: const TextStyle(
@@ -1012,12 +1010,9 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                         fontSize: 14,
                       ),
                     ),
-
                     const SizedBox(height: 20),
                     const Divider(color: Color(0xFFEEE0D4)),
                     const SizedBox(height: 16),
-
-                    // ── Buttons or Order Form ───────────────────
                     if (!_showOrderForm) ...[
                       SizedBox(
                         width: double.infinity,
@@ -1029,19 +1024,14 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                           }),
                           icon:
                               const Icon(Icons.shopping_bag_outlined, size: 20),
-                          label: const Text(
-                            'Add to Cart',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                          label: const Text('Add to Cart',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w700)),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.chocolate,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
+                                borderRadius: BorderRadius.circular(14)),
                             elevation: 0,
                           ),
                         ),
@@ -1056,25 +1046,19 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                             _showOrderForm = true;
                           }),
                           icon: const Icon(Icons.flash_on_rounded, size: 20),
-                          label: const Text(
-                            'Place Order Now',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                          label: const Text('Place Order Now',
+                              style: TextStyle(
+                                  fontSize: 16, fontWeight: FontWeight.w700)),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppTheme.caramel,
                             foregroundColor: Colors.white,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
+                                borderRadius: BorderRadius.circular(14)),
                             elevation: 0,
                           ),
                         ),
                       ),
                     ] else ...[
-                      // ── Order Details Form ────────────────────
                       Row(
                         children: [
                           Container(
@@ -1184,8 +1168,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                                       side: const BorderSide(
                                           color: AppTheme.chocolate),
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
                                       padding: const EdgeInsets.symmetric(
                                           vertical: 14),
                                     ),
@@ -1203,8 +1187,8 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                                           : AppTheme.chocolate,
                                       foregroundColor: Colors.white,
                                       shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(14),
-                                      ),
+                                          borderRadius:
+                                              BorderRadius.circular(14)),
                                       padding: const EdgeInsets.symmetric(
                                           vertical: 14),
                                       elevation: 0,
@@ -1226,12 +1210,12 @@ class _ProductDetailSheetState extends State<_ProductDetailSheet> {
                         ),
                       ),
                     ],
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 30),
                   ],
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1408,10 +1392,7 @@ class _CartTabState extends State<_CartTab> {
     final userId = int.tryParse(widget.userId) ?? 0;
 
     for (final item in List.from(widget.cart)) {
-      if (item.isCustom) {
-        // Custom orders are already on the server — skip
-        continue;
-      }
+      if (item.isCustom) continue;
 
       final result = await ApiService.createOrder(
         userId: userId,
@@ -1432,14 +1413,12 @@ class _CartTabState extends State<_CartTab> {
     }
 
     setState(() => _isPlacingOrder = false);
-
     if (!mounted) return;
 
     if (failed == 0 && success > 0) {
       widget.cart.clear();
       widget.onUpdate();
       await widget.onOrdersPlaced();
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -1462,7 +1441,6 @@ class _CartTabState extends State<_CartTab> {
         ),
       );
     } else if (success == 0 && failed == 0) {
-      // Cart was empty of placeable items
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text('No orders to place.'),
@@ -1554,8 +1532,6 @@ class _CartTabState extends State<_CartTab> {
                   },
                 ),
         ),
-
-        // ── Bottom Checkout ──────────────────────────────────
         if (widget.cart.isNotEmpty)
           Container(
             padding: const EdgeInsets.all(20),
@@ -1845,17 +1821,89 @@ class _CartItemCard extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════
 // PROFILE TAB
 // ═══════════════════════════════════════════════════════════════
-class _ProfileTab extends StatelessWidget {
+class _ProfileTab extends StatefulWidget {
   final UserModel? user;
   final VoidCallback onLogout;
+  final VoidCallback onUserUpdated;
 
-  const _ProfileTab({required this.user, required this.onLogout});
+  const _ProfileTab({
+    required this.user,
+    required this.onLogout,
+    required this.onUserUpdated,
+  });
+
+  @override
+  State<_ProfileTab> createState() => _ProfileTabState();
+}
+
+class _ProfileTabState extends State<_ProfileTab> {
+  bool _isUploadingPhoto = false;
+
+  Future<void> _changeProfilePicture() async {
+    final picker = ImagePicker();
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+      maxWidth: 800,
+    );
+    if (picked == null) return; // picked is already an XFile
+
+    final userId = int.tryParse(widget.user?.id ?? '') ?? 0;
+    if (userId == 0) return;
+
+    setState(() => _isUploadingPhoto = true);
+
+    final result = await ApiService.updateProfilePicture(
+      userId: userId,
+      imageFile: picked, // ← pass XFile directly, not picked.path
+    );
+
+    setState(() => _isUploadingPhoto = false);
+
+    if (!mounted) return;
+
+    if (result['success'] == true) {
+      UserSession.instance.updateProfilePicture(result['imageUrl']);
+      widget.onUserUpdated();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Text('📸', style: TextStyle(fontSize: 18)),
+              SizedBox(width: 10),
+              Text(
+                'Profile photo updated!',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          backgroundColor: AppTheme.chocolate,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result['message'] ?? 'Upload failed'),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final user = widget.user;
     final name = user?.name ?? 'Guest';
     final email = user?.email ?? '';
     final phone = user?.phone;
+    final profilePicUrl = user?.profilePicture;
 
     return SingleChildScrollView(
       child: Column(
@@ -1877,23 +1925,91 @@ class _ProfileTab extends StatelessWidget {
             ),
             child: Column(
               children: [
-                Container(
-                  width: 90,
-                  height: 90,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withOpacity(0.15),
-                    border: Border.all(
-                        color: AppTheme.gold.withOpacity(0.5), width: 2),
-                  ),
-                  child: Center(
-                    child: Text(
-                      user?.avatarEmoji ?? '👤',
-                      style: const TextStyle(fontSize: 44),
+                // ── Avatar with camera overlay ──────────────
+                Stack(
+                  alignment: Alignment.bottomRight,
+                  children: [
+                    Container(
+                      width: 90,
+                      height: 90,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.15),
+                        border: Border.all(
+                          color: AppTheme.gold.withOpacity(0.5),
+                          width: 2,
+                        ),
+                      ),
+                      child: ClipOval(
+                        child: _isUploadingPhoto
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : profilePicUrl != null && profilePicUrl.isNotEmpty
+                                ? Image.network(
+                                    '${ApiService.baseUrl}$profilePicUrl',
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (_, __, ___) => Center(
+                                      child: Text(
+                                        user?.avatarEmoji ?? '👤',
+                                        style: const TextStyle(fontSize: 44),
+                                      ),
+                                    ),
+                                  )
+                                : Center(
+                                    child: Text(
+                                      user?.avatarEmoji ?? '👤',
+                                      style: const TextStyle(fontSize: 44),
+                                    ),
+                                  ),
+                      ),
+                    ),
+                    // ── Camera button ────────────────────────
+                    GestureDetector(
+                      onTap: _isUploadingPhoto ? null : _changeProfilePicture,
+                      child: Container(
+                        width: 28,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: AppTheme.gold,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt_rounded,
+                          color: AppTheme.darkChoco,
+                          size: 14,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                // ── Change Photo text ────────────────────────
+                GestureDetector(
+                  onTap: _isUploadingPhoto ? null : _changeProfilePicture,
+                  child: Text(
+                    _isUploadingPhoto ? 'Uploading...' : 'Change Photo',
+                    style: TextStyle(
+                      color: AppTheme.gold.withOpacity(0.85),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      decoration: TextDecoration.underline,
+                      decorationColor: AppTheme.gold.withOpacity(0.85),
                     ),
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 10),
                 Text(
                   name,
                   style: const TextStyle(
@@ -1906,14 +2022,18 @@ class _ProfileTab extends StatelessWidget {
                 Text(
                   email,
                   style: TextStyle(
-                      color: Colors.white.withOpacity(0.6), fontSize: 14),
+                    color: Colors.white.withOpacity(0.6),
+                    fontSize: 14,
+                  ),
                 ),
                 if (phone != null) ...[
                   const SizedBox(height: 2),
                   Text(
                     phone,
                     style: TextStyle(
-                        color: Colors.white.withOpacity(0.45), fontSize: 12),
+                      color: Colors.white.withOpacity(0.45),
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ],
@@ -1924,7 +2044,6 @@ class _ProfileTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // My Orders — navigates to MyOrdersScreen
                 _ProfileTile(
                   icon: Icons.receipt_long_outlined,
                   label: 'My Orders',
@@ -1933,7 +2052,6 @@ class _ProfileTab extends StatelessWidget {
                     MaterialPageRoute(builder: (_) => const MyOrdersScreen()),
                   ),
                 ),
-                // My Custom Orders — navigates to MyCustomOrdersScreen
                 _ProfileTile(
                   icon: Icons.cake_outlined,
                   label: 'My Custom Orders',
@@ -1944,14 +2062,15 @@ class _ProfileTab extends StatelessWidget {
                   ),
                 ),
                 _ProfileTile(
-                    icon: Icons.location_on_outlined,
-                    label: 'Delivery Addresses',
-                    onTap: () {}),
+                  icon: Icons.location_on_outlined,
+                  label: 'Delivery Addresses',
+                  onTap: () {},
+                ),
                 _ProfileTile(
-                    icon: Icons.notifications_outlined,
-                    label: 'Notifications',
-                    onTap: () {}),
-                // Help & Support — navigates to HelpSupportScreen
+                  icon: Icons.notifications_outlined,
+                  label: 'Notifications',
+                  onTap: () {},
+                ),
                 _ProfileTile(
                   icon: Icons.help_outline_rounded,
                   label: 'Help & Support',
@@ -1965,7 +2084,7 @@ class _ProfileTab extends StatelessWidget {
                 _ProfileTile(
                   icon: Icons.logout_rounded,
                   label: 'Logout',
-                  onTap: onLogout,
+                  onTap: widget.onLogout,
                   isDestructive: true,
                 ),
                 const SizedBox(height: 30),
@@ -1988,6 +2107,7 @@ class _ProfileTab extends StatelessWidget {
   }
 }
 
+// ── Profile Tile ──────────────────────────────────────────────────────────────
 class _ProfileTile extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -2048,7 +2168,7 @@ class _ProfileTile extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// BOTTOM NAV  (3 tabs: Home | Cart | Profile)
+// BOTTOM NAV
 // ═══════════════════════════════════════════════════════════════
 class _BottomNav extends StatelessWidget {
   final int currentIndex;

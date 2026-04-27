@@ -114,6 +114,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ),
               ),
             ),
+
             // Main content
             Center(
               child: Column(
@@ -125,30 +126,34 @@ class _SplashScreenState extends State<SplashScreen>
                       opacity: _fadeAnim,
                       child: Column(
                         children: [
-                          // Logo badge
+                          // ── Real Logo ──────────────────────────
                           Container(
-                            width: 120,
-                            height: 120,
+                            width: 150,
+                            height: 150,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: Colors.white.withOpacity(0.12),
+                              color: Colors.white,
                               border: Border.all(
                                 color: AppTheme.gold.withOpacity(0.5),
-                                width: 2,
+                                width: 2.5,
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppTheme.gold.withOpacity(0.2),
-                                  blurRadius: 30,
-                                  spreadRadius: 5,
+                                  color: AppTheme.gold.withOpacity(0.25),
+                                  blurRadius: 35,
+                                  spreadRadius: 6,
                                 ),
                               ],
                             ),
-                            child: const Center(
-                              child: Text('🧁', style: TextStyle(fontSize: 58)),
+                            child: ClipOval(
+                              child: Image.asset(
+                                'assets/images/bakeshop_logo.jpg',
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 28),
+
                           // Brand name
                           const Text(
                             'Sweet',
@@ -198,6 +203,7 @@ class _SplashScreenState extends State<SplashScreen>
                 ],
               ),
             ),
+
             // Bottom loader
             Positioned(
               bottom: 60,

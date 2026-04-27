@@ -17,6 +17,19 @@ class UserSession {
     _currentUser = user;
   }
 
+  void updateProfilePicture(String url) {
+    if (_currentUser == null) return;
+    _currentUser = UserModel(
+      id: _currentUser!.id,
+      name: _currentUser!.name,
+      email: _currentUser!.email,
+      phone: _currentUser!.phone,
+      profilePicture: url,
+      savedAddresses: _currentUser!.savedAddresses,
+      avatarEmoji: _currentUser!.avatarEmoji,
+    );
+  }
+
   /// Call this on logout.
   void clearUser() {
     _currentUser = null;

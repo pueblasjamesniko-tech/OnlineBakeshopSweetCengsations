@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product_model.dart';
 import '../models/user_session.dart';
@@ -8,7 +10,7 @@ import '../models/cart_item.dart';
 
 class ApiService {
   static const String baseUrl =
-      'http://10.224.229.192:5112'; // one place to change
+      'http://10.124.23.192:5112'; // one place to change
 
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
@@ -34,12 +36,36 @@ class ApiService {
 
         if (data['status'] == 200 && data['data'] != null) {
           final userData = data['data'];
+          final userId =
+              int.tryParse(userData['userId']?.toString() ?? '') ?? 0;
+
+          // ── Fetch full profile to get profilePicture ──────
+          String? profilePicture = userData['profilePicture'];
+          if (userId > 0 &&
+              (profilePicture == null || profilePicture.isEmpty)) {
+            try {
+              final profileResponse = await http.get(
+                Uri.parse('$baseUrl/User/GetUserById?userId=$userId'),
+                headers: _headers,
+              );
+              if (profileResponse.statusCode == 200) {
+                final profileData = jsonDecode(profileResponse.body);
+                if (profileData['status'] == 200 &&
+                    profileData['data'] != null) {
+                  profilePicture = profileData['data']['profilePicture'];
+                }
+              }
+            } catch (e) {
+              print('Fetch profile error: $e');
+            }
+          }
 
           final user = UserModel(
             id: userData['userId']?.toString() ?? '',
             name: userData['fullName'] ?? userData['name'] ?? 'User',
             email: userData['email'] ?? '',
             phone: userData['contactNo'] ?? userData['contactno'],
+            profilePicture: profilePicture, // ← now includes saved photo
             savedAddresses: userData['address'] != null &&
                     userData['address'].toString().isNotEmpty
                 ? [userData['address'].toString()]
@@ -66,6 +92,62 @@ class ApiService {
         'success': false,
         'message': 'Cannot connect to server. Please try again.',
       };
+    }
+  }
+
+  static Future<Map<String, dynamic>> updateProfilePicture({
+    required int userId,
+    required XFile imageFile, // ← changed from filePath String to XFile
+  }) async {
+    try {
+      print('=== updateProfilePicture START ===');
+      print('userId: $userId');
+      print('fileName: ${imageFile.name}');
+
+      final uri = Uri.parse('$baseUrl/User/UpdateProfilePicture');
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['userId'] = userId.toString();
+
+      // ── Read as bytes — works on all platforms ───────────
+      final Uint8List bytes = await imageFile.readAsBytes();
+      final fileName = imageFile.name;
+
+      final multipartFile = http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: fileName,
+      );
+
+      request.files.add(multipartFile);
+
+      print('Sending request...');
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+
+      print('Status code: ${response.statusCode}');
+      print('Response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        print('Response data: $data'); // debug — remove later
+        if (data['status'] == 200) {
+          final imageUrl = data['imageUrl'] ?? '';
+          return {'success': true, 'imageUrl': imageUrl};
+        }
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Upload failed'
+        };
+      }
+      return {
+        'success': false,
+        'message': 'Server error: ${response.statusCode}'
+      };
+    } catch (e) {
+      print('=== updateProfilePicture ERROR ===');
+      print('Error type: ${e.runtimeType}');
+      print('Error details: $e');
+      return {'success': false, 'message': 'Error: $e'};
     }
   }
 

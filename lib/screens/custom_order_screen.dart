@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
@@ -35,8 +35,10 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
   TimeOfDay? _deliveryTime;
   final _addressCtrl = TextEditingController();
 
-  // ── Reference image ───────────────────────────────────────
-  File? _referenceImageFile;
+  // ── Reference image — use Uint8List instead of File (Flutter Web safe) ──
+  Uint8List? _referenceImageBytes;
+  String? _referenceImageFileName;
+  String? _referenceImageMimeType;
   String? _referenceImageUrl; // path returned by server after upload
 
   List<String> get _flavors => [
@@ -98,7 +100,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     if (picked != null) setState(() => _deliveryTime = picked);
   }
 
-  // ── Pick reference image from gallery ─────────────────────
+  // ── Pick reference image — reads bytes, works on both mobile & web ────────
   Future<void> _pickReferenceImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -106,32 +108,40 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
       imageQuality: 80,
     );
     if (picked != null) {
-      setState(() => _referenceImageFile = File(picked.path));
+      final bytes = await picked.readAsBytes();
+      setState(() {
+        _referenceImageBytes = bytes;
+        _referenceImageFileName = picked.name;
+        _referenceImageMimeType = picked.mimeType ?? 'image/jpeg';
+      });
     }
   }
 
-  // ── Upload reference image to API ─────────────────────────
+  // ── Upload reference image using bytes (Flutter Web safe) ─────────────────
   Future<String?> _uploadReferenceImage() async {
-    if (_referenceImageFile == null) return null;
+    if (_referenceImageBytes == null) return null;
     try {
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('${ApiService.baseUrl}/Upload/UploadReferenceImage'),
       );
-      request.files.add(await http.MultipartFile.fromPath(
+      request.files.add(http.MultipartFile.fromBytes(
         'file',
-        _referenceImageFile!.path,
+        _referenceImageBytes!,
+        filename: _referenceImageFileName ?? 'reference.jpg',
       ));
       final streamed = await request.send();
       final response = await http.Response.fromStream(streamed);
       if (response.statusCode == 200) {
-        final data = response.body;
-        // Parse ImageUrl from response
-        final match = RegExp(r'"ImageUrl"\s*:\s*"([^"]+)"').firstMatch(data);
+        final match = RegExp(r'"[Ii]mage[Uu]rl"\s*:\s*"([^"]+)"')
+            .firstMatch(response.body);
         return match?.group(1);
+      } else {
+        debugPrint(
+            'Upload reference image failed: ${response.statusCode} ${response.body}');
       }
     } catch (e) {
-      print('Upload reference image error: $e');
+      debugPrint('Upload reference image error: $e');
     }
     return null;
   }
@@ -159,7 +169,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     setState(() => _isSubmitting = true);
 
     // Upload reference image first if selected
-    if (_referenceImageFile != null) {
+    if (_referenceImageBytes != null) {
       _referenceImageUrl = await _uploadReferenceImage();
     }
 
@@ -529,13 +539,14 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                           const SizedBox(height: 12),
                           GestureDetector(
                             onTap: _pickReferenceImage,
-                            child: _referenceImageFile != null
+                            child: _referenceImageBytes != null
                                 ? Stack(
                                     children: [
                                       ClipRRect(
                                         borderRadius: BorderRadius.circular(12),
-                                        child: Image.file(
-                                          _referenceImageFile!,
+                                        // ✅ Image.memory works on both mobile & web
+                                        child: Image.memory(
+                                          _referenceImageBytes!,
                                           height: 160,
                                           width: double.infinity,
                                           fit: BoxFit.cover,
@@ -545,8 +556,11 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                                         top: 8,
                                         right: 8,
                                         child: GestureDetector(
-                                          onTap: () => setState(
-                                              () => _referenceImageFile = null),
+                                          onTap: () => setState(() {
+                                            _referenceImageBytes = null;
+                                            _referenceImageFileName = null;
+                                            _referenceImageMimeType = null;
+                                          }),
                                           child: Container(
                                             width: 28,
                                             height: 28,
@@ -751,7 +765,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
   }
 }
 
-// ── Helper Widgets (same as before, kept intact) ──────────────────────────────
+// ── Helper Widgets ────────────────────────────────────────────────────────────
 
 class _SectionHeader extends StatelessWidget {
   final String title;
