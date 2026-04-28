@@ -1,3 +1,6 @@
+import 'dashboard_screen.dart';
+import '../models/user_session.dart';
+import '../services/auth_storage.dart';
 import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 import 'login_screen.dart';
@@ -55,17 +58,31 @@ class _SplashScreenState extends State<SplashScreen>
     await Future.delayed(const Duration(milliseconds: 500));
     _slideController.forward();
     await Future.delayed(const Duration(milliseconds: 2200));
-    if (mounted) {
-      Navigator.pushReplacement(
-        context,
-        PageRouteBuilder(
-          pageBuilder: (_, __, ___) => const LoginScreen(),
-          transitionsBuilder: (_, anim, __, child) =>
-              FadeTransition(opacity: anim, child: child),
-          transitionDuration: const Duration(milliseconds: 700),
-        ),
-      );
+
+    // Restore persisted session before deciding where to go.
+    final hasSession = await AuthStorage.hasValidSession();
+    if (hasSession) {
+      final savedUser = await AuthStorage.readUser();
+      if (savedUser != null) {
+        UserSession.instance.setUser(savedUser);
+      }
     }
+
+    if (!mounted) return;
+
+    final nextScreen = hasSession && UserSession.instance.currentUser != null
+        ? const DashboardScreen()
+        : const LoginScreen();
+
+    Navigator.pushReplacement(
+      context,
+      PageRouteBuilder(
+        pageBuilder: (_, __, ___) => nextScreen,
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+        transitionDuration: const Duration(milliseconds: 700),
+      ),
+    );
   }
 
   @override

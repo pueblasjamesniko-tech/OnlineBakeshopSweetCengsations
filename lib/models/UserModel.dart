@@ -10,6 +10,7 @@ class UserModel {
   final List<OrderModel> recentOrders;
   final List<String> savedAddresses;
   final String? phone;
+  final String? token;
 
   const UserModel({
     required this.id,
@@ -23,6 +24,7 @@ class UserModel {
     this.recentOrders = const [],
     this.savedAddresses = const [],
     this.phone,
+    this.token,
   });
 
   /// Creates a UserModel from a JSON map (e.g. from your backend response).
@@ -42,6 +44,7 @@ class UserModel {
       savedAddresses: (json['saved_addresses'] as List<dynamic>? ?? [])
           .map((a) => a.toString())
           .toList(),
+      token: json['token'] ?? '',
     );
   }
 
@@ -54,6 +57,7 @@ class UserModel {
         'favourite_count': favouriteCount,
         'points': points,
         'phone': phone,
+        'token': token,
       };
 
   /// Returns just the first name for greetings.

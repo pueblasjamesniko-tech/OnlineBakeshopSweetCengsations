@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sweet_cengsations/services/auth_storage.dart';
 import '../models/product_model.dart';
 import '../models/user_session.dart';
 import '../models/UserModel.dart';
@@ -71,9 +72,11 @@ class ApiService {
                     userData['address'].toString().isNotEmpty
                 ? [userData['address'].toString()]
                 : [],
+            token: data['token'] ?? '',
           );
 
           UserSession.instance.setUser(user);
+          await AuthStorage.saveSession(user);
           return {'success': true, 'data': data};
         }
 
@@ -193,8 +196,9 @@ class ApiService {
     }
   }
 
-  static void logout() {
+  static Future<void> logout() async {
     UserSession.instance.clearUser();
+    await AuthStorage.clearSession();
   }
 
   // =============================================
@@ -451,4 +455,25 @@ class ApiService {
       return [];
     }
   }
+
+  // Future<dynamic> registerDevice({
+  //   required DeviceRegisterRequest request,
+  //   required String accessToken,
+  // }) async {
+  //   try {
+  //     final response = await _dio.post(
+  //       '$_baseUrl/devices/register',
+  //       data: request.toJson(),
+  //       options: Options(
+  //         headers: {'Authorization': 'Bearer $accessToken'},
+  //       ),
+  //     );
+  //     final data = response.data;
+  //     debugPrint(data.toString());
+  //     return data;
+  //   } catch (e) {
+  //     debugPrint(e.toString());
+  //     throw Exception(e);
+  //   }
+  // }
 }
