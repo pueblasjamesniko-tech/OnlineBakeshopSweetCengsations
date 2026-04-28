@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "882871751640",
+    "project_id": "online-bakeshop",
+    "storage_bucket": "online-bakeshop.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:882871751640:android:90104f0f1be753fd6698ad",
+        "android_client_info": {
+          "package_name": "com.example.sweet_cengsations"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgJxdhd7tQAb0G6aRfTxOLCME_NQRCFJ8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
