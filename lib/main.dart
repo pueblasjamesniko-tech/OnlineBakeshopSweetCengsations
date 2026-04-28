@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:sweet_cengsations/firebase_options.dart';
+import 'package:sweet_cengsations/services/fcm_service.dart';
 import '../theme/app_theme.dart';
 import '../screens/splash_screen.dart';
 
@@ -11,6 +12,8 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  await setupFcmAndroid();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

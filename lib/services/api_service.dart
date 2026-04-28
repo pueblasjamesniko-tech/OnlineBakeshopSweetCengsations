@@ -1,9 +1,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sweet_cengsations/services/auth_storage.dart';
+import 'package:sweet_cengsations/services/fcm_service.dart';
 import '../models/product_model.dart';
 import '../models/user_session.dart';
 import '../models/UserModel.dart';
@@ -77,6 +79,13 @@ class ApiService {
 
           UserSession.instance.setUser(user);
           await AuthStorage.saveSession(user);
+          Future.microtask(() async {
+            try {
+              await syncDeviceRegistrationWithBackend();
+            } catch (e, st) {
+              debugPrint('syncDeviceRegistrationWithBackend: $e\n$st');
+            }
+          });
           return {'success': true, 'data': data};
         }
 
@@ -456,24 +465,33 @@ class ApiService {
     }
   }
 
-  // Future<dynamic> registerDevice({
-  //   required DeviceRegisterRequest request,
-  //   required String accessToken,
-  // }) async {
-  //   try {
-  //     final response = await _dio.post(
-  //       '$_baseUrl/devices/register',
-  //       data: request.toJson(),
-  //       options: Options(
-  //         headers: {'Authorization': 'Bearer $accessToken'},
-  //       ),
-  //     );
-  //     final data = response.data;
-  //     debugPrint(data.toString());
-  //     return data;
-  //   } catch (e) {
-  //     debugPrint(e.toString());
-  //     throw Exception(e);
-  //   }
-  // }
+  Future<dynamic> registerDevice({
+    required String deviceToken,
+    required String platform,
+    required String deviceId,
+    required String deviceName,
+    required String accessToken,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/devices/register'),
+        body: jsonEncode({
+          "fcmToken": deviceToken,
+          "platform": platform,
+          "deviceIdentifier": deviceId,
+          "deviceName": deviceName
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+      );
+      final data = jsonDecode(response.body);
+      debugPrint(data.toString());
+      return data;
+    } catch (e) {
+      debugPrint(e.toString());
+      throw Exception(e);
+    }
+  }
 }
