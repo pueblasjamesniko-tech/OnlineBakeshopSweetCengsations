@@ -10,7 +10,7 @@ import '../models/cart_item.dart';
 
 class ApiService {
   static const String baseUrl =
-      'http://10.124.23.192:5112'; // one place to change
+      'http://192.168.1.38:5112'; // one place to change
 
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
