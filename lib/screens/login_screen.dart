@@ -454,34 +454,6 @@ class _LoginScreenState extends State<LoginScreen>
                             ],
                           ),
                         ),
-
-                        // Demo hint
-                        const SizedBox(height: 20),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: AppTheme.cream,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                                color: AppTheme.caramel.withOpacity(0.2)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Text('💡', style: TextStyle(fontSize: 14)),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Demo: demo@sweet.com / password123',
-                                  style: TextStyle(
-                                    color: AppTheme.chocolate.withOpacity(0.55),
-                                    fontSize: 11,
-                                    fontStyle: FontStyle.italic,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
                       ],
                     ),
                   ),

@@ -302,11 +302,11 @@ class HelpSupportScreen extends StatelessWidget {
                         const SizedBox(height: 16),
                         _ContactRow(
                             icon: Icons.storefront_outlined,
-                            label: 'Sweet Cengsations Bakeshop'),
+                            label: 'Isuya Mactan Lapu-lapu City'),
                         const SizedBox(height: 8),
                         _ContactRow(
                             icon: Icons.schedule_outlined,
-                            label: 'Mon–Sat: 8:00 AM – 7:00 PM'),
+                            label: 'Contact us: 09454975134'),
                         const SizedBox(height: 8),
                         _ContactRow(
                             icon: Icons.email_outlined,
@@ -319,7 +319,7 @@ class HelpSupportScreen extends StatelessWidget {
 
                   Center(
                     child: Text(
-                      'Sweet Cengsations v1.0.0 ✦\nMade with ❤️ for every sweet occasion',
+                      'Sweet Cengsations v1.0.0 ✦\nMade with heart for every sweet occasion',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppTheme.chocolate.withOpacity(0.3),
