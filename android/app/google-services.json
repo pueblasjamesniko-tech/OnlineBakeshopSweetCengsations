@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1074737966005",
+    "project_id": "onlinebakeshop",
+    "storage_bucket": "onlinebakeshop.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1074737966005:android:07903d426d728f419047fc",
+        "android_client_info": {
+          "package_name": "com.sweetcengsations.onlinebakeshop"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDOCnayZysdLRrDA31ueLlXxdA9K4-F6_Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

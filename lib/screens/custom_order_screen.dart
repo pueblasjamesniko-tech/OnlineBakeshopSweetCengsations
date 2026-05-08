@@ -7,6 +7,7 @@ import '../../../models/cart_item.dart';
 import '../../../models/user_session.dart';
 import '../../../services/api_service.dart';
 
+// Screen where the user builds their custom cake or cupcake order
 class CustomOrderScreen extends StatefulWidget {
   final String orderType;
   final ValueChanged<CartItem> onSubmitted;
@@ -35,12 +36,23 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
   TimeOfDay? _deliveryTime;
   final _addressCtrl = TextEditingController();
 
-  // ── Reference image — use Uint8List instead of File (Flutter Web safe) ──
+  // Holds the picked image as bytes so it works on both mobile and web
   Uint8List? _referenceImageBytes;
   String? _referenceImageFileName;
   String? _referenceImageMimeType;
   String? _referenceImageUrl; // path returned by server after upload
 
+  // Auto-fills the delivery address when the screen opens
+  @override
+  void initState() {
+    super.initState();
+    final defaultAddress = UserSession.instance.selectedDeliveryAddress;
+    if (defaultAddress.isNotEmpty) {
+      _addressCtrl.text = defaultAddress;
+    }
+  }
+
+  // List of available flavors to choose from
   List<String> get _flavors => [
         'Chocolate',
         'Vanilla',
@@ -52,6 +64,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
         'Ube',
       ];
 
+  // Size options change depending on whether it's a cake or cupcakes
   List<String> get _sizes => widget.orderType == 'Cake'
       ? [
           '6 inch (6–8 pax)',
@@ -61,15 +74,19 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
         ]
       : ['6 pieces', '12 pieces', '24 pieces', '36 pieces'];
 
+  // Emoji shown in the header based on order type
   String get _emoji => widget.orderType == 'Cake' ? '🎂' : '🧁';
 
+  // Shows a readable date or a placeholder if none is picked yet
   String get _formattedDate => _deliveryDate == null
       ? 'Select date'
       : '${_deliveryDate!.year}-${_deliveryDate!.month.toString().padLeft(2, '0')}-${_deliveryDate!.day.toString().padLeft(2, '0')}';
 
+  // Shows a readable time or a placeholder if none is picked yet
   String get _formattedTime =>
       _deliveryTime == null ? 'Select time' : _deliveryTime!.format(context);
 
+  // Opens the date picker so the user can choose a delivery date
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -86,6 +103,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     if (picked != null) setState(() => _deliveryDate = picked);
   }
 
+  // Opens the time picker so the user can choose a delivery time
   Future<void> _pickTime() async {
     final picked = await showTimePicker(
       context: context,
@@ -100,7 +118,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     if (picked != null) setState(() => _deliveryTime = picked);
   }
 
-  // ── Pick reference image — reads bytes, works on both mobile & web ────────
+  // Opens the gallery so the user can pick a reference image
   Future<void> _pickReferenceImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(
@@ -117,7 +135,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     }
   }
 
-  // ── Upload reference image using bytes (Flutter Web safe) ─────────────────
+  // Uploads the reference image to the server and returns its URL
   Future<String?> _uploadReferenceImage() async {
     if (_referenceImageBytes == null) return null;
     try {
@@ -146,6 +164,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     return null;
   }
 
+  // Validates the form, uploads the image if any, then sends the order to the API
   Future<void> _submitOrder() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -168,7 +187,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
 
     setState(() => _isSubmitting = true);
 
-    // Upload reference image first if selected
+    // Upload reference image first if the user picked one
     if (_referenceImageBytes != null) {
       _referenceImageUrl = await _uploadReferenceImage();
     }
@@ -197,6 +216,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     setState(() => _isSubmitting = false);
     if (!mounted) return;
 
+    // If successful, build a CartItem and pass it back to the parent
     if (result['success'] == true) {
       final cartItem = CartItem.custom(
         customLabel: 'Custom ${widget.orderType}',
@@ -226,6 +246,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     }
   }
 
+  // Shows a small pop-up message at the bottom of the screen
   void _showSnack(String msg, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -237,6 +258,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
     );
   }
 
+  // Cleans up all text controllers when the screen is closed
   @override
   void dispose() {
     _colorThemeCtrl.dispose();
@@ -252,7 +274,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
       backgroundColor: AppTheme.cream,
       body: CustomScrollView(
         slivers: [
-          // ── App Bar ──────────────────────────────────────────
+          // App bar with a gradient header showing the order type
           SliverAppBar(
             expandedHeight: 180,
             pinned: true,
@@ -303,7 +325,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
             ),
           ),
 
-          // ── Form ─────────────────────────────────────────────
+          // Main form with all the order fields
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -315,7 +337,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     _SectionHeader(title: '✨ ${widget.orderType} Preferences'),
                     const SizedBox(height: 14),
 
-                    // ── Flavor ───────────────────────────────────
+                    // Flavor chips — tap one to select it
                     _FormCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -376,7 +398,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Size ─────────────────────────────────────
+                    // Size options — tap one to select it
                     _FormCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -437,7 +459,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Layers (Cake only) ────────────────────────
+                    // Number of layers — only shown for cakes, not cupcakes
                     if (widget.orderType == 'Cake') ...[
                       _FormCard(
                         child: Row(
@@ -483,7 +505,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                       const SizedBox(height: 12),
                     ],
 
-                    // ── Color Theme ──────────────────────────────
+                    // Optional color theme field
                     _FormCard(
                       child: TextFormField(
                         controller: _colorThemeCtrl,
@@ -502,7 +524,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Message on Cake ──────────────────────────
+                    // Optional message to be written on the cake
                     _FormCard(
                       child: TextFormField(
                         controller: _messageCtrl,
@@ -522,7 +544,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Reference Image ──────────────────────────
+                    // Optional reference image upload
                     _FormCard(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -552,6 +574,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                                           fit: BoxFit.cover,
                                         ),
                                       ),
+                                      // X button to remove the selected image
                                       Positioned(
                                         top: 8,
                                         right: 8,
@@ -614,7 +637,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
                     ),
                     const SizedBox(height: 12),
 
-                    // ── Special Notes ────────────────────────────
+                    // Optional special notes field
                     _FormCard(
                       child: TextFormField(
                         controller: _notesCtrl,
@@ -636,7 +659,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
 
                     const SizedBox(height: 24),
 
-                    // ── Delivery Details ─────────────────────────
+                    // Delivery date, time, and address fields
                     const _SectionHeader(title: '🚚 Delivery Details'),
                     const SizedBox(height: 14),
 
@@ -684,7 +707,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
 
                     const SizedBox(height: 28),
 
-                    // ── Info notice ──────────────────────────────
+                    // Info box telling the user what happens after they submit
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -715,7 +738,7 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
 
                     const SizedBox(height: 24),
 
-                    // ── Submit ───────────────────────────────────
+                    // Submit button — shows a loading spinner while submitting
                     SizedBox(
                       width: double.infinity,
                       height: 56,
@@ -765,8 +788,9 @@ class _CustomOrderScreenState extends State<CustomOrderScreen> {
   }
 }
 
-// ── Helper Widgets ────────────────────────────────────────────────────────────
+// Helper Widgets
 
+// Bold section title shown above each group of fields
 class _SectionHeader extends StatelessWidget {
   final String title;
   const _SectionHeader({required this.title});
@@ -778,6 +802,7 @@ class _SectionHeader extends StatelessWidget {
           color: AppTheme.darkChoco));
 }
 
+// Small label shown above each input field
 class _FieldLabel extends StatelessWidget {
   final String text;
   const _FieldLabel(this.text);
@@ -790,6 +815,7 @@ class _FieldLabel extends StatelessWidget {
           letterSpacing: 0.3));
 }
 
+// White rounded card that wraps each form section
 class _FormCard extends StatelessWidget {
   final Widget child;
   const _FormCard({required this.child});
@@ -811,6 +837,7 @@ class _FormCard extends StatelessWidget {
       );
 }
 
+// A tappable row used for picking date and time
 class _TapRow extends StatelessWidget {
   final String label;
   final String value;
@@ -856,6 +883,7 @@ class _TapRow extends StatelessWidget {
   }
 }
 
+// Small + and - buttons used to change the number of cake layers
 class _QBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;

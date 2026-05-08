@@ -1,3 +1,4 @@
+// A product with its details like name, price, and availability
 class ProductModel {
   final int productId;
   final String productName;
@@ -6,6 +7,7 @@ class ProductModel {
   final String? imageUrl;
   final bool isAvailable;
 
+  // Creates a product — all fields are required except imageUrl and isAvailable
   ProductModel({
     required this.productId,
     required this.productName,
@@ -15,6 +17,7 @@ class ProductModel {
     this.isAvailable = true,
   });
 
+  // Builds a product from a JSON map (e.g. from an API response)
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
       productId: json['productId'] as int? ?? 0,
@@ -26,6 +29,7 @@ class ProductModel {
     );
   }
 
+  // Turns the product back into a JSON map (e.g. to send to an API)
   Map<String, dynamic> toJson() {
     return {
       'productId': productId,
@@ -37,6 +41,7 @@ class ProductModel {
     };
   }
 
+  // Shows all product info as a single readable text
   @override
   String toString() {
     return 'productId: $productId, productName: $productName, description: $description, price: $price, imageUrl: $imageUrl, isAvailable: $isAvailable';

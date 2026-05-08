@@ -4,6 +4,7 @@ import '../../../services/api_service.dart';
 import '../../../models/user_session.dart';
 import 'register_screen.dart';
 import 'dashboard_screen.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,13 +15,17 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen>
     with TickerProviderStateMixin {
+  // These control the text the user types in the email and password fields
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
 
+  // If true, the password shows as dots (hidden). If false, it's visible.
   bool _obscurePassword = true;
+  // If true, the login button shows a loading spinner instead
   bool _isLoading = false;
 
+  // These handle the slide-in animations when the page first opens
   late AnimationController _entryController;
   late List<Animation<Offset>> _slideAnims;
   late List<Animation<double>> _fadeAnims;
@@ -28,11 +33,14 @@ class _LoginScreenState extends State<LoginScreen>
   @override
   void initState() {
     super.initState();
+    // Set how long the entry animation takes (1.4 seconds total)
     _entryController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
 
+    // Create 5 slide animations — each one starts a little later than the previous
+    // This makes items appear one by one (staggered effect)
     _slideAnims = List.generate(5, (i) {
       return Tween<Offset>(
         begin: const Offset(0, 0.25),
@@ -43,6 +51,7 @@ class _LoginScreenState extends State<LoginScreen>
       ));
     });
 
+    // Create 5 fade animations that match the slide animations above
     _fadeAnims = List.generate(5, (i) {
       return Tween<double>(begin: 0, end: 1).animate(
         CurvedAnimation(
@@ -52,6 +61,7 @@ class _LoginScreenState extends State<LoginScreen>
       );
     });
 
+    // Start playing the animation as soon as the screen opens
     _entryController.forward();
   }
 
@@ -63,6 +73,7 @@ class _LoginScreenState extends State<LoginScreen>
     super.dispose();
   }
 
+  // Wraps any widget with a slide + fade animation using the index to pick the right animation
   Widget _animated(int idx, Widget child) {
     return SlideTransition(
       position: _slideAnims[idx],
@@ -70,11 +81,14 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
+  // This runs when the user taps the "Sign In" button
   Future<void> _handleLogin() async {
+    // Stop if the form has errors (empty fields, invalid email, etc.)
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
     try {
+      // Send the email and password to our server and wait for the result
       final result = await ApiService.loginUser(
         email: _emailController.text.trim(),
         password: _passwordController.text,
@@ -84,6 +98,10 @@ class _LoginScreenState extends State<LoginScreen>
       setState(() => _isLoading = false);
 
       if (result['success'] == true) {
+        // ✅ Register FCM token right after successful login
+        await _registerFcmToken();
+
+        // Go to the Dashboard and remove the Login screen from the history
         Navigator.pushReplacement(
           context,
           PageRouteBuilder(
@@ -94,6 +112,7 @@ class _LoginScreenState extends State<LoginScreen>
           ),
         );
       } else {
+        // Login failed — show an error message at the bottom of the screen
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -108,6 +127,7 @@ class _LoginScreenState extends State<LoginScreen>
         );
       }
     } catch (e) {
+      // Something unexpected went wrong (e.g., no internet) — show a generic error
       if (!mounted) return;
       setState(() => _isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -122,6 +142,22 @@ class _LoginScreenState extends State<LoginScreen>
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         ),
       );
+    }
+  }
+
+  // Gets this phone's unique notification token and sends it to our server
+  // This allows us to send push notifications to this specific device
+  Future<void> _registerFcmToken() async {
+    try {
+      final fcmToken = await FirebaseMessaging.instance.getToken();
+      if (fcmToken == null) return;
+      debugPrint('📱 FCM Token: $fcmToken');
+      await ApiService.registerDevice(
+        fcmToken: fcmToken,
+        platform: 'Android',
+      );
+    } catch (e) {
+      debugPrint('FCM registration failed: $e');
     }
   }
 
@@ -234,7 +270,7 @@ class _LoginScreenState extends State<LoginScreen>
                 ),
               ),
 
-              // ── Form card ──────────────────────────────────
+              // White form card — floats over the brown banner and holds the login fields
               Positioned(
                 top: size.height * 0.36,
                 left: 20,
@@ -270,7 +306,7 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                         const SizedBox(height: 24),
 
-                        // Email
+                        // Email input field — only accepts valid email format
                         _animated(
                           0,
                           TextFormField(
@@ -295,7 +331,7 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                         const SizedBox(height: 16),
 
-                        // Password
+                        // Password input field — hides the text and has a show/hide toggle
                         _animated(
                           2,
                           TextFormField(
@@ -330,33 +366,14 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                         const SizedBox(height: 10),
 
-                        // Forgot password
-                        _animated(
-                          3,
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton(
-                              onPressed: () {},
-                              child: const Text(
-                                'Forgot Password?',
-                                style: TextStyle(
-                                  color: AppTheme.caramel,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-
-                        // Login button
+                        // Sign In button — shows a spinner while logging in
                         _animated(
                           4,
                           SizedBox(
                             width: double.infinity,
                             height: 54,
                             child: ElevatedButton(
+                              // Disable the button while loading so the user can't tap it twice
                               onPressed: _isLoading ? null : _handleLogin,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppTheme.chocolate,
@@ -368,6 +385,7 @@ class _LoginScreenState extends State<LoginScreen>
                                 ),
                                 elevation: 0,
                               ),
+                              // Show a spinner if loading, otherwise show "Sign In"
                               child: _isLoading
                                   ? const SizedBox(
                                       width: 22,
@@ -423,7 +441,7 @@ class _LoginScreenState extends State<LoginScreen>
                         ),
                         const SizedBox(height: 16),
 
-                        // Register link
+                        // "Don't have an account?" — tapping "Create one" goes to Register screen
                         Center(
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -467,7 +485,7 @@ class _LoginScreenState extends State<LoginScreen>
   }
 }
 
-// Decorative dot pattern painter
+// Draws a grid of tiny dots on the brown banner for a decorative background effect
 class _DotPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {

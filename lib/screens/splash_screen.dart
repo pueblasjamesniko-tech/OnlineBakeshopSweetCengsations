@@ -11,9 +11,11 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with TickerProviderStateMixin {
+  // These are like remote controls for our animations
   late AnimationController _fadeController;
   late AnimationController _scaleController;
   late AnimationController _slideController;
+  // These describe WHAT the animation actually does
   late Animation<double> _fadeAnim;
   late Animation<double> _scaleAnim;
   late Animation<Offset> _slideAnim;
@@ -22,23 +24,29 @@ class _SplashScreenState extends State<SplashScreen>
   void initState() {
     super.initState();
 
+    // Set up the fade animation — makes things go from invisible to visible
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
+    // Set up the scale animation — makes things grow from small to big
     _scaleController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
+    // Set up the slide animation — makes things move up into place
     _slideController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
 
     _fadeAnim = CurvedAnimation(parent: _fadeController, curve: Curves.easeIn);
+    // Logo bounces in like a rubber ball (elasticOut = bouncy!)
     _scaleAnim = Tween<double>(begin: 0.6, end: 1.0).animate(
       CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
     );
+
+    // Text slides up smoothly from below
     _slideAnim = Tween<Offset>(
       begin: const Offset(0, 0.4),
       end: Offset.zero,
@@ -48,6 +56,7 @@ class _SplashScreenState extends State<SplashScreen>
     _startAnimations();
   }
 
+  // This is the sequence of events when the splash screen opens
   void _startAnimations() async {
     await Future.delayed(const Duration(milliseconds: 300));
     _scaleController.forward();
@@ -56,6 +65,7 @@ class _SplashScreenState extends State<SplashScreen>
     _slideController.forward();
     await Future.delayed(const Duration(milliseconds: 2200));
     if (mounted) {
+      // After the animations, go to the Login screen with a smooth fade
       Navigator.pushReplacement(
         context,
         PageRouteBuilder(
@@ -68,6 +78,7 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
 
+  // Clean up the animation controllers when the screen is closed (so we don't waste memory)
   @override
   void dispose() {
     _fadeController.dispose();
@@ -115,7 +126,7 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
 
-            // Main content
+            // The main content shown in the center of the screen
             Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -184,6 +195,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                     ),
                   ),
+                  // Tagline that slides up after the logo appears
                   const SizedBox(height: 16),
                   SlideTransition(
                     position: _slideAnim,
@@ -204,7 +216,7 @@ class _SplashScreenState extends State<SplashScreen>
               ),
             ),
 
-            // Bottom loader
+            // A small spinning circle at the bottom — shows the app is loading
             Positioned(
               bottom: 60,
               left: 0,

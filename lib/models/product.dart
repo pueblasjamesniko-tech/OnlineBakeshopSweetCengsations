@@ -1,3 +1,4 @@
+// A product with its details like name, price, and availability
 class ProductModel {
   final int productId;
   final String productName;
@@ -6,6 +7,7 @@ class ProductModel {
   final String? imageUrl;
   final bool isAvailable;
 
+  // Creates a product — all fields are required except imageUrl and isAvailable
   const ProductModel({
     required this.productId,
     required this.productName,
@@ -15,6 +17,7 @@ class ProductModel {
     this.isAvailable = true,
   });
 
+  // Builds a product from a JSON map (e.g. from an API response)
   factory ProductModel.fromJson(Map<String, dynamic> json) {
     return ProductModel(
       productId: json['productId'] ?? 0,

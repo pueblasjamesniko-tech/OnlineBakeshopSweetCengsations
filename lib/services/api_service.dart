@@ -1,25 +1,28 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../models/product_model.dart';
 import '../models/user_session.dart';
 import '../models/UserModel.dart';
 import '../models/cart_item.dart';
+import 'package:flutter/foundation.dart';
 
+// This file handles ALL communication between the app and the server
+// The address of our server — all requests go here
 class ApiService {
-  static const String baseUrl =
-      'http://10.124.23.192:5112'; // one place to change
+  static const String baseUrl = 'http://172.23.201.192:5112';
 
+  // Every request tells the server we're sending JSON data
   static Map<String, String> get _headers => {
         'Content-Type': 'application/json',
       };
 
-  // =============================================
+  //
   // AUTH
-  // =============================================
-
+  //
+  // Sends the user's email and password to the server to log in
   static Future<Map<String, dynamic>> loginUser({
     required String email,
     required String password,
@@ -30,17 +33,21 @@ class ApiService {
         headers: _headers,
         body: jsonEncode({'email': email, 'password': password}),
       );
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-
         if (data['status'] == 200 && data['data'] != null) {
           final userData = data['data'];
+          final String token = data['token'] ?? '';
+          final String refreshToken = data['refreshToken'] ?? ''; // ✅ get it
+
+          // Save the login tokens so the app remembers the user is logged in
+          UserSession.instance.setToken(token);
+          UserSession.instance.setRefreshToken(refreshToken); // ✅ save it
+
           final userId =
               int.tryParse(userData['userId']?.toString() ?? '') ?? 0;
-
-          // ── Fetch full profile to get profilePicture ──────
           String? profilePicture = userData['profilePicture'];
+          // If no profile picture came with login, go fetch it separately
           if (userId > 0 &&
               (profilePicture == null || profilePicture.isEmpty)) {
             try {
@@ -55,39 +62,34 @@ class ApiService {
                   profilePicture = profileData['data']['profilePicture'];
                 }
               }
-            } catch (e) {
-              print('Fetch profile error: $e');
-            }
+            } catch (_) {}
           }
-
+          // Build the user object and save it to the session
           final user = UserModel(
             id: userData['userId']?.toString() ?? '',
             name: userData['fullName'] ?? userData['name'] ?? 'User',
             email: userData['email'] ?? '',
             phone: userData['contactNo'] ?? userData['contactno'],
-            profilePicture: profilePicture, // ← now includes saved photo
+            profilePicture: profilePicture,
             savedAddresses: userData['address'] != null &&
                     userData['address'].toString().isNotEmpty
                 ? [userData['address'].toString()]
                 : [],
           );
-
           UserSession.instance.setUser(user);
           return {'success': true, 'data': data};
         }
-
         return {
           'success': false,
           'message': data['message'] ?? 'Wrong email or password.',
         };
       }
-
       return {
         'success': false,
         'message': 'Wrong email or password. Please try again.',
       };
     } catch (e) {
-      print('LOGIN ERROR: $e');
+      // If something went wrong connecting to the server
       return {
         'success': false,
         'message': 'Cannot connect to server. Please try again.',
@@ -95,44 +97,65 @@ class ApiService {
     }
   }
 
-  static Future<Map<String, dynamic>> updateProfilePicture({
-    required int userId,
-    required XFile imageFile, // ← changed from filePath String to XFile
+  // Registers the user's phone/device so they can receive push notifications
+  static Future<void> registerDevice({
+    required String fcmToken,
+    required String platform,
   }) async {
     try {
-      print('=== updateProfilePicture START ===');
-      print('userId: $userId');
-      print('fileName: ${imageFile.name}');
+      final token = UserSession.instance.token;
+      if (token.isEmpty) {
+        debugPrint('❌ No token found, skipping FCM registration');
+        return;
+      }
 
-      final uri = Uri.parse('$baseUrl/User/UpdateProfilePicture');
-      final request = http.MultipartRequest('POST', uri);
-      request.fields['userId'] = userId.toString();
-
-      // ── Read as bytes — works on all platforms ───────────
-      final Uint8List bytes = await imageFile.readAsBytes();
-      final fileName = imageFile.name;
-
-      final multipartFile = http.MultipartFile.fromBytes(
-        'file',
-        bytes,
-        filename: fileName,
+      // ✅ FIXED: correct route matching your DevicesController
+      final response = await http.post(
+        Uri.parse('$baseUrl/api/devices/register'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token', // prove the user is logged in
+        },
+        body: jsonEncode({
+          'fcmToken': fcmToken,
+          'platform': platform,
+          'deviceName': 'Flutter App',
+        }),
       );
 
-      request.files.add(multipartFile);
+      if (response.statusCode == 200) {
+        debugPrint('✅ FCM device registered successfully');
+      } else {
+        debugPrint(
+            '❌ FCM register failed: ${response.statusCode} ${response.body}');
+      }
+    } catch (e) {
+      debugPrint('FCM register error: $e');
+    }
+  }
 
-      print('Sending request...');
+  // Uploads a new profile picture for the user
+  static Future<Map<String, dynamic>> updateProfilePicture({
+    required int userId,
+    required XFile imageFile,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/User/UpdateProfilePicture');
+      // MultipartRequest is used when sending a file (not just text)
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['userId'] = userId.toString();
+      final Uint8List bytes = await imageFile.readAsBytes();
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: imageFile.name,
+      ));
       final streamed = await request.send();
       final response = await http.Response.fromStream(streamed);
-
-      print('Status code: ${response.statusCode}');
-      print('Response body: ${response.body}');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('Response data: $data'); // debug — remove later
         if (data['status'] == 200) {
-          final imageUrl = data['imageUrl'] ?? '';
-          return {'success': true, 'imageUrl': imageUrl};
+          return {'success': true, 'imageUrl': data['imageUrl'] ?? ''};
         }
         return {
           'success': false,
@@ -144,13 +167,11 @@ class ApiService {
         'message': 'Server error: ${response.statusCode}'
       };
     } catch (e) {
-      print('=== updateProfilePicture ERROR ===');
-      print('Error type: ${e.runtimeType}');
-      print('Error details: $e');
       return {'success': false, 'message': 'Error: $e'};
     }
   }
 
+  // Creates a new account by sending the user's info to the server
   static Future<Map<String, dynamic>> registerUser({
     required String fullname,
     required String email,
@@ -159,32 +180,27 @@ class ApiService {
     required String address,
   }) async {
     try {
-      final body = {
-        'fullName': fullname,
-        'email': email,
-        'password': password,
-        'address': address,
-        'contactNo': contactno,
-      };
-
       final response = await http.post(
         Uri.parse('$baseUrl/Register/UserRegister'),
         headers: _headers,
-        body: jsonEncode(body),
+        body: jsonEncode({
+          'fullName': fullname,
+          'email': email,
+          'password': password,
+          'address': address,
+          'contactNo': contactno,
+        }),
       );
-
       if (response.statusCode == 201 || response.statusCode == 200) {
         return {'success': true};
       } else {
         final error = jsonDecode(response.body);
         return {
           'success': false,
-          'message':
-              error['message'] ?? 'Registration failed. Please try again.',
+          'message': error['message'] ?? 'Registration failed.',
         };
       }
     } catch (e) {
-      print('REGISTER ERROR: $e');
       return {
         'success': false,
         'message': 'Cannot connect to server. Please try again.',
@@ -192,87 +208,157 @@ class ApiService {
     }
   }
 
-  static void logout() {
-    UserSession.instance.clearUser();
-  }
+  static void logout() => UserSession.instance.clearUser();
 
-  // =============================================
-  // CART PERSISTENCE
-  // Keys are per-user so carts don't bleed between accounts.
-  // =============================================
-
-  static String _cartKey(String userId) => 'cart_$userId';
-
-  /// Save the current cart list to SharedPreferences.
-  static Future<void> saveCart(String userId, List<CartItem> cart) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      // Only persist regular (non-custom) items — custom orders are already
-      // saved on the server the moment the user submits them.
-      final regularItems = cart.where((i) => !i.isCustom).toList();
-      final encoded = jsonEncode(regularItems.map((i) => i.toJson()).toList());
-      await prefs.setString(_cartKey(userId), encoded);
-    } catch (e) {
-      print('saveCart error: $e');
-    }
-  }
-
-  /// Load the persisted cart for this user from SharedPreferences.
+  //
+  // CART
+  //
+  // Fetches all items currently in the user's cart from the server
   static Future<List<CartItem>> loadCart(String userId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString(_cartKey(userId));
-      if (raw == null || raw.isEmpty) return [];
-      final List<dynamic> decoded = jsonDecode(raw);
-      return decoded
-          .map((e) => CartItem.fromJson(e as Map<String, dynamic>))
-          .toList();
-    } catch (e) {
-      print('loadCart error: $e');
+      final uid = int.tryParse(userId) ?? 0;
+      if (uid == 0) return [];
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/Cart/GetCartByUser?userId=$uid'),
+        headers: _headers,
+      );
+
+      if (response.statusCode != 200) return [];
+      final body = jsonDecode(response.body);
+      if (body['status'] != 200 || body['data'] == null) return [];
+
+      final List<dynamic> data = body['data'];
+      return data.map((row) {
+        final product = ProductModel(
+          productId: row['productId'] as int? ?? 0,
+          productName: row['productName']?.toString() ?? '',
+          description: row['description']?.toString() ?? '',
+          price: (row['price'] as num?)?.toDouble() ?? 0.0,
+          imageUrl: row['imageUrl']?.toString(),
+          isAvailable: true,
+        );
+        final item = CartItem.regular(
+          product: product,
+          quantity: row['quantity'] as int? ?? 1,
+          deliveryDate: row['deliveryDate']?.toString() ?? '',
+          deliveryTime: row['deliveryTime']?.toString() ?? '',
+          deliveryAddress: row['deliveryAddress']?.toString() ?? '',
+          specialNotes: row['specialNotes']?.toString(),
+          paymentMethod: row['paymentMethod']?.toString() ?? 'COD',
+          fulfillmentType: row['fulfillmentType']?.toString() ?? 'Delivery',
+          meetupPlace: row['meetupPlace']?.toString(),
+        );
+        item.cartId = row['cartId'] as int?;
+        return item;
+      }).toList();
+    } catch (_) {
       return [];
     }
   }
 
-  /// Clear the persisted cart for this user (e.g. after placing all orders).
-  static Future<void> clearCart(String userId) async {
+  // Adds or updates a single item in the cart on the server
+  static Future<void> saveCartItem(String userId, CartItem item) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove(_cartKey(userId));
-    } catch (e) {
-      print('clearCart error: $e');
-    }
+      final uid = int.tryParse(userId) ?? 0;
+      if (uid == 0 || item.product == null) return;
+
+      final response = await http.post(
+        Uri.parse('$baseUrl/Cart/UpsertCartItem'),
+        headers: _headers,
+        body: jsonEncode({
+          'userId': uid,
+          'productId': item.product!.productId,
+          'quantity': item.quantity,
+          'deliveryDate': item.deliveryDate ?? '',
+          'deliveryTime': item.deliveryTime ?? '',
+          'deliveryAddress': item.deliveryAddress ?? '',
+          'specialNotes': item.specialNotes ?? '',
+          'paymentMethod': item.paymentMethod ?? 'COD',
+          'fulfillmentType': item.fulfillmentType ?? 'Delivery',
+          'meetupPlace': item.meetupPlace ?? '',
+        }),
+      );
+
+      // Save the cartId the server gives back so we can update/delete it later
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final cartId = body['data']?['cartId'];
+        if (cartId != null && cartId != 0) {
+          item.cartId = cartId as int;
+        }
+      }
+    } catch (_) {}
   }
 
-  // =============================================
-  // PRODUCTS
-  // =============================================
+  // Changes the quantity of an item already in the cart
+  static Future<void> updateCartItemQty(String userId, CartItem item) async {
+    try {
+      final uid = int.tryParse(userId) ?? 0;
+      if (uid == 0 || item.cartId == null) return;
 
+      await http.put(
+        Uri.parse(
+            '$baseUrl/Cart/UpdateCartItemQty?cartId=${item.cartId}&userId=$uid&quantity=${item.quantity}'),
+        headers: _headers,
+      );
+    } catch (_) {}
+  }
+
+  // Removes one specific item from the cart
+  static Future<void> removeCartItem(String userId, CartItem item) async {
+    try {
+      final uid = int.tryParse(userId) ?? 0;
+      if (uid == 0 || item.cartId == null) return;
+
+      await http.delete(
+        Uri.parse(
+            '$baseUrl/Cart/RemoveCartItem?cartId=${item.cartId}&userId=$uid'),
+        headers: _headers,
+      );
+    } catch (_) {}
+  }
+
+  // Deletes every item in the cart at once (used after placing an order)
+  static Future<void> clearCart(String userId) async {
+    try {
+      final uid = int.tryParse(userId) ?? 0;
+      if (uid == 0) return;
+
+      await http.delete(
+        Uri.parse('$baseUrl/Cart/ClearCart?userId=$uid'),
+        headers: _headers,
+      );
+    } catch (_) {}
+  }
+
+  //
+  // PRODUCTS
+  //
+  // Gets all products that are currently available in the bakeshop
   static Future<List<ProductModel>> getAllProducts() async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/Product/GetAllProducts'),
+        Uri.parse('$baseUrl/Product/GetAvailableProducts'),
         headers: _headers,
       );
-
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
-        print('response: $body');
         if (body['status'] == 200 && body['data'] != null) {
           final List<dynamic> list = body['data'];
           return list.map((e) => ProductModel.fromJson(e)).toList();
         }
       }
       return [];
-    } catch (e) {
-      print('GetAllProducts error: $e');
+    } catch (_) {
       return [];
     }
   }
 
-  // =============================================
+  //
   // REGULAR ORDERS
-  // =============================================
-
+  //
+  // Places a regular order for a product (like buying a cake from the menu)
   static Future<Map<String, dynamic>> createOrder({
     required int userId,
     required int productId,
@@ -282,6 +368,9 @@ class ApiService {
     required String deliveryTime,
     required String deliveryAddress,
     String? specialNotes,
+    required String paymentMethod,
+    required String fulfillmentType,
+    String? meetupPlace,
   }) async {
     try {
       final body = {
@@ -293,20 +382,25 @@ class ApiService {
         'deliveryTime': deliveryTime,
         'deliveryAddress': deliveryAddress,
         'specialNotes': specialNotes ?? '',
+        'paymentMethod': paymentMethod,
+        'fulfillmentType': fulfillmentType,
+        'meetupPlace': meetupPlace ?? '',
       };
-
       final response = await http.post(
         Uri.parse('$baseUrl/Orders/CreateOrder'),
         headers: _headers,
         body: jsonEncode(body),
       );
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        if (data['status'] == 200) return {'success': true};
+        if (data['status'] == 200) {
+          return {
+            'success': true,
+            'orderId': data['data']?['orderId'] ?? 0,
+          };
+        }
         return {'success': false, 'message': data['message'] ?? 'Order failed'};
       }
-
       if (response.statusCode == 400) {
         final data = jsonDecode(response.body);
         return {
@@ -314,21 +408,53 @@ class ApiService {
           'message': data['message'] ?? 'Validation failed'
         };
       }
-
       return {'success': false, 'message': 'Server error'};
     } catch (e) {
-      print('CreateOrder error: $e');
       return {'success': false, 'message': 'Cannot connect to server'};
     }
   }
 
+  // Uploads a photo of the payment receipt for a regular order
+  static Future<Map<String, dynamic>> uploadOrderReceipt({
+    required int orderId,
+    required Uint8List imageBytes,
+    required String fileName,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/Orders/UploadReceipt');
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['orderId'] = orderId.toString();
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        imageBytes,
+        filename: fileName,
+        contentType: MediaType('image', 'jpeg'),
+      ));
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 200) {
+          return {'success': true, 'imageUrl': data['imageUrl'] ?? ''};
+        }
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Upload failed'
+        };
+      }
+      return {'success': false, 'message': 'Server error'};
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
+  // Gets all past and current orders belonging to a specific user
   static Future<List<Map<String, dynamic>>> getOrdersByUser(int userId) async {
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/Orders/GetOrdersByUserId?userId=$userId'),
         headers: _headers,
       );
-
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
         if (body['status'] == 200 && body['data'] != null) {
@@ -336,16 +462,33 @@ class ApiService {
         }
       }
       return [];
-    } catch (e) {
-      print('GetOrdersByUser error: $e');
+    } catch (_) {
       return [];
     }
   }
 
-  // =============================================
-  // CUSTOM ORDERS
-  // =============================================
+  // Cancels an order that the user no longer wants
+  static Future<Map<String, dynamic>> cancelOrder(int orderId) async {
+    try {
+      final response = await http.put(
+        Uri.parse('$baseUrl/Orders/CancelOrder?orderId=$orderId'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 200) return {'success': true};
+        return {'success': false, 'message': data['message'] ?? 'Failed'};
+      }
+      return {'success': false, 'message': 'Server error'};
+    } catch (e) {
+      return {'success': false, 'message': 'Cannot connect to server'};
+    }
+  }
 
+  //
+  // CUSTOM ORDERS
+  //
+  // Submits a custom cake order (user picks flavor, size, design, etc.)
   static Future<Map<String, dynamic>> createCustomOrder({
     required int userId,
     required String orderType,
@@ -361,9 +504,7 @@ class ApiService {
     String? referenceImage,
   }) async {
     try {
-      // Get current user info from session
       final user = UserSession.instance.currentUser;
-
       final body = {
         'customOrderId': 0,
         'userId': userId,
@@ -379,36 +520,31 @@ class ApiService {
         'deliveryTime': deliveryTime,
         'deliveryAddress': deliveryAddress,
         'paymentStatus': 'Unpaid',
-        'orderStatus': 'Awaiting Quote',
+        'orderStatus': 'Awaiting Approval',
         'dateOrdered': DateTime.now().toUtc().toIso8601String(),
         'quotedPrice': 0,
         'fullName': user?.name ?? '',
         'email': user?.email ?? '',
         'contactNo': user?.phone ?? '',
       };
-
-      print('CreateCustomOrder body: ${jsonEncode(body)}'); // debug log
-
       final response = await http.post(
         Uri.parse('$baseUrl/CustomOrder/CreateCustomOrder'),
         headers: _headers,
         body: jsonEncode(body),
       );
-
-      print('CreateCustomOrder status: ${response.statusCode}');
-      print('CreateCustomOrder response: ${response.body}'); // debug log
-
       if (response.statusCode == 200 || response.statusCode == 201) {
         final data = jsonDecode(response.body);
         if (data['status'] == 200 || data['status'] == 201) {
-          return {'success': true};
+          return {
+            'success': true,
+            'customOrderId': data['data']?['customOrderId'] ?? 0,
+          };
         }
         return {
           'success': false,
           'message': data['message'] ?? 'Failed to submit custom order'
         };
       }
-
       if (response.statusCode == 400) {
         final data = jsonDecode(response.body);
         return {
@@ -416,38 +552,196 @@ class ApiService {
           'message': data['message'] ?? 'Validation failed'
         };
       }
-
-      return {
-        'success': false,
-        'message': 'Server error (${response.statusCode}): ${response.body}'
-      };
+      return {'success': false, 'message': 'Server error'};
     } catch (e) {
-      print('CreateCustomOrder error: $e');
       return {'success': false, 'message': 'Cannot connect to server: $e'};
     }
   }
 
+  // Officially places a custom order after the admin has approved and quoted a price
+  static Future<Map<String, dynamic>> placeCustomOrder({
+    required int customOrderId,
+    required String paymentMethod,
+    required String deliveryDate,
+    required String deliveryTime,
+    required String deliveryAddress,
+    required String fulfillmentType,
+    String? meetupPlace,
+  }) async {
+    try {
+      final params = {
+        'customOrderId': customOrderId.toString(),
+        'paymentMethod': paymentMethod,
+        'deliveryDate': deliveryDate,
+        'deliveryTime': deliveryTime,
+        'deliveryAddress': deliveryAddress,
+        'fulfillmentType': fulfillmentType,
+        if (meetupPlace != null && meetupPlace.isNotEmpty)
+          'meetupPlace': meetupPlace,
+      };
+      final uri = Uri.parse('$baseUrl/CustomOrder/PlaceCustomOrder')
+          .replace(queryParameters: params);
+      final response = await http.put(uri, headers: _headers);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 200) return {'success': true};
+        return {'success': false, 'message': data['message'] ?? 'Failed'};
+      }
+      return {'success': false, 'message': 'Server error'};
+    } catch (e) {
+      return {'success': false, 'message': 'Cannot connect to server'};
+    }
+  }
+
+  // Uploads a payment receipt photo for a custom order
+  static Future<Map<String, dynamic>> uploadCustomOrderReceipt({
+    required int customOrderId,
+    required Uint8List imageBytes,
+    required String fileName,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/CustomOrder/UploadReceipt');
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['customOrderId'] = customOrderId.toString();
+      request.files.add(http.MultipartFile.fromBytes(
+        'file',
+        imageBytes,
+        filename: fileName,
+        contentType: MediaType('image', 'jpeg'),
+      ));
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 200) {
+          return {'success': true, 'imageUrl': data['imageUrl'] ?? ''};
+        }
+        return {
+          'success': false,
+          'message': data['message'] ?? 'Upload failed'
+        };
+      }
+      return {'success': false, 'message': 'Server error'};
+    } catch (e) {
+      return {'success': false, 'message': 'Error: $e'};
+    }
+  }
+
+  // Gets all custom cake orders made by a specific user
   static Future<List<Map<String, dynamic>>> getCustomOrdersByUser(
       int userId) async {
     try {
       final response = await http.get(
-        Uri.parse('$baseUrl/CustomOrder/GetAllCustomOrders'),
+        Uri.parse(
+            '$baseUrl/CustomOrder/GetCustomOrdersByUserId?userId=$userId'),
         headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        if (body['status'] == 200 && body['data'] != null) {
+          return List<Map<String, dynamic>>.from(body['data']);
+        }
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<Map<String, dynamic>> cancelCustomOrder(
+      int customOrderId) async {
+    try {
+      final response = await http.put(
+        Uri.parse(
+            '$baseUrl/CustomOrder/CancelCustomOrder?customOrderId=$customOrderId'),
+        headers: _headers,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['status'] == 200) return {'success': true};
+        return {'success': false, 'message': data['message'] ?? 'Failed'};
+      }
+      return {'success': false, 'message': 'Server error'};
+    } catch (e) {
+      return {'success': false, 'message': 'Cannot connect to server'};
+    }
+  }
+
+//
+// NOTIFICATIONS
+//
+// Gets all notifications for the user (like order updates, promos, etc.)
+  static Future<List<Map<String, dynamic>>> getNotificationsByUser(
+      int userId) async {
+    try {
+      final token = UserSession.instance.token;
+      if (token.isEmpty) return [];
+
+      final response = await http.get(
+        Uri.parse('$baseUrl/api/notifications/me?page=1&pageSize=50'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
       );
 
       if (response.statusCode == 200) {
         final body = jsonDecode(response.body);
         if (body['status'] == 200 && body['data'] != null) {
-          final List<dynamic> all = body['data'];
-          return List<Map<String, dynamic>>.from(
-            all.where((o) => o['userId'] == userId),
-          );
+          return List<Map<String, dynamic>>.from(body['data']);
         }
       }
       return [];
-    } catch (e) {
-      print('GetCustomOrders error: $e');
+    } catch (_) {
       return [];
     }
+  }
+
+  // Marks one notification as read (so it stops showing as new)
+  static Future<void> markNotificationAsRead(int notificationId) async {
+    try {
+      final token = UserSession.instance.token;
+      if (token.isEmpty) return;
+
+      await http.patch(
+        Uri.parse('$baseUrl/api/notifications/$notificationId/read'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (_) {}
+  }
+
+  // Marks ALL notifications as read at once
+  static Future<void> markAllNotificationsAsRead() async {
+    try {
+      final token = UserSession.instance.token;
+      if (token.isEmpty) return;
+
+      await http.patch(
+        Uri.parse('$baseUrl/api/notifications/read-all'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (_) {}
+  }
+
+  // Permanently deletes a notification so it disappears from the list
+  static Future<void> deleteNotification(int notificationId) async {
+    try {
+      final token = UserSession.instance.token;
+      if (token.isEmpty) return;
+
+      await http.delete(
+        Uri.parse('$baseUrl/api/notifications/$notificationId'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+      );
+    } catch (_) {}
   }
 }

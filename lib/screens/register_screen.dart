@@ -3,6 +3,8 @@ import '../../../theme/app_theme.dart';
 import '../../../services/api_service.dart';
 import 'login_screen.dart';
 
+// This is the Sign Up screen where new users create their account.
+// Like filling out a form to join a bakery rewards club!
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
 
@@ -12,6 +14,8 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen>
     with TickerProviderStateMixin {
+  // A key that lets us check if all form fields are filled in correctly
+  // Text controllers — each one holds what the user typed in one input box
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -19,21 +23,26 @@ class _RegisterScreenState extends State<RegisterScreen>
   final _addressController = TextEditingController(); // ← NEW
   final _passwordController = TextEditingController();
 
-  bool _obscurePassword = true;
-  bool _isLoading = false;
-  bool _agreed = false;
+  bool _obscurePassword = true; // True = password is hidden (shows dots)
+  bool _isLoading = false; // True = form is being submitted, show spinner
+  bool _agreed = false; // True = user checked the Terms & Conditions box
 
+  // These control the slide-and-fade animation when the screen first opens
   late AnimationController _entryController;
-  late List<Animation<Offset>> _slides;
-  late List<Animation<double>> _fades;
+  late List<Animation<Offset>> _slides; // Controls sliding up into place
+  late List<Animation<double>> _fades; // Controls fading in from invisible
 
+  // Runs when the screen opens — sets up the entry animations
   @override
   void initState() {
     super.initState();
+    // The animation plays over 1.5 seconds total
     _entryController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
+    // Create 7 slide animations, each starting a little later than the previous
+    // This makes each field slide in one after another, like a staircase effect
     _slides = List.generate(7, (i) {
       return Tween<Offset>(begin: const Offset(0, 0.2), end: Offset.zero)
           .animate(CurvedAnimation(
@@ -41,6 +50,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         curve: Interval(i * 0.10, 0.55 + i * 0.07, curve: Curves.easeOutCubic),
       ));
     });
+    // Create 7 fade animations that match the slide animations
     _fades = List.generate(7, (i) {
       return Tween<double>(begin: 0, end: 1).animate(
         CurvedAnimation(
@@ -52,6 +62,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     _entryController.forward();
   }
 
+  // Clean up the animation controller and text controllers when the screen closes
   @override
   void dispose() {
     _entryController.dispose();
@@ -63,13 +74,18 @@ class _RegisterScreenState extends State<RegisterScreen>
     super.dispose();
   }
 
+  // Shortcut helper that wraps any widget with a slide + fade animation.
+  // "i" is which animation slot (0–6) to use.
   Widget _a(int i, Widget child) => SlideTransition(
         position: _slides[i],
         child: FadeTransition(opacity: _fades[i], child: child),
       );
 
+  // Runs when the user taps "Create Account".
+  // Validates the form, checks the checkbox, then sends data to the server.
   Future<void> _handleRegister() async {
     if (!_formKey.currentState!.validate()) return;
+    // Stop if the user hasn't agreed to the Terms & Conditions
     if (!_agreed) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -83,8 +99,9 @@ class _RegisterScreenState extends State<RegisterScreen>
       return;
     }
 
-    setState(() => _isLoading = true);
+    setState(() => _isLoading = true); // Show the spinner, disable the button
 
+    // Send the user's details to the server to create their account
     final result = await ApiService.registerUser(
       fullname: _nameController.text.trim(),
       email: _emailController.text.trim(),
@@ -96,6 +113,7 @@ class _RegisterScreenState extends State<RegisterScreen>
     setState(() => _isLoading = false);
 
     if (result['success'] == true) {
+      // Registration worked! Show a 🎉 success popup
       if (mounted) {
         showDialog(
           context: context,
@@ -150,6 +168,7 @@ class _RegisterScreenState extends State<RegisterScreen>
         );
       }
     } else {
+      // Registration failed — show the error message from the server
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -164,17 +183,19 @@ class _RegisterScreenState extends State<RegisterScreen>
     }
   }
 
+  // A reusable helper that builds one styled text input field with animation.
+  // "idx" tells it which slide/fade animation to use.
   Widget _buildField({
     required int idx,
     required TextEditingController controller,
     required String label,
     required IconData icon,
     TextInputType? keyboardType,
-    bool obscure = false,
-    bool hasToggle = false,
-    VoidCallback? onToggle,
+    bool obscure = false, // True = hide the text (for passwords)
+    bool hasToggle = false, // True = show the eye icon to show/hide password
+    VoidCallback? onToggle, // What happens when the eye icon is tapped
     int maxLines = 1,
-    String? Function(String?)? validator,
+    String? Function(String?)? validator, // Checks if the input is valid
   }) {
     return _a(
       idx,
@@ -187,6 +208,7 @@ class _RegisterScreenState extends State<RegisterScreen>
           labelText: label,
           prefixIcon:
               Icon(icon, color: AppTheme.caramel.withOpacity(0.7), size: 20),
+          // Show the eye toggle button only for password fields
           suffixIcon: hasToggle
               ? IconButton(
                   icon: Icon(
@@ -211,10 +233,10 @@ class _RegisterScreenState extends State<RegisterScreen>
       backgroundColor: AppTheme.cream,
       body: CustomScrollView(
         slivers: [
-          // ── App bar ───────────────────────────────────────
+          // Collapsible top banner with the app name and a decorative dot pattern
           SliverAppBar(
             expandedHeight: 200,
-            pinned: true,
+            pinned: true, // Stays visible when scrolled up
             backgroundColor: AppTheme.chocolate,
             leading: IconButton(
               icon: const Icon(Icons.arrow_back_ios_new_rounded,
@@ -263,7 +285,7 @@ class _RegisterScreenState extends State<RegisterScreen>
             ),
           ),
 
-          // ── Form ──────────────────────────────────────────
+          // The registration form inside a white rounded card
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(20),
@@ -281,7 +303,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                   ],
                 ),
                 child: Form(
-                  key: _formKey,
+                  key: _formKey, // Connects the form to our validation key
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -309,7 +331,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 20),
 
-                      // 1. Full Name
+                      // Field 1: Full Name
                       _buildField(
                         idx: 1,
                         controller: _nameController,
@@ -321,7 +343,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 14),
 
-                      // 2. Email Address
+                      // Field 2: Email Address — checks for "@" symbol
                       _buildField(
                         idx: 2,
                         controller: _emailController,
@@ -337,7 +359,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 14),
 
-                      // 3. Phone Number
+                      // Field 3: Phone Number
                       _buildField(
                         idx: 3,
                         controller: _phoneController,
@@ -350,7 +372,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 14),
 
-                      // 4. Address  ← MOVED HERE (was Confirm Password)
+                      // Field 4: Address — allows 2 lines of text
                       _buildField(
                         idx: 4,
                         controller: _addressController,
@@ -364,7 +386,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 14),
 
-                      // 5. Password
+                      // Field 5: Password — hidden by default, has show/hide toggle
                       _buildField(
                         idx: 5,
                         controller: _passwordController,
@@ -383,7 +405,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 18),
 
-                      // Terms checkbox
+                      // Checkbox: user must agree to Terms & Conditions to register
                       _a(
                         6,
                         Row(
@@ -430,7 +452,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 20),
 
-                      // Register button
+                      // "Create Account" button — disabled while loading, shows spinner
                       _a(
                         6,
                         SizedBox(
@@ -472,6 +494,7 @@ class _RegisterScreenState extends State<RegisterScreen>
                       ),
                       const SizedBox(height: 18),
 
+                      // "Already have an account? Sign In" link at the bottom
                       Center(
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -509,11 +532,14 @@ class _RegisterScreenState extends State<RegisterScreen>
   }
 }
 
+// A custom painter that draws a subtle grid of tiny dots in the header background.
+// Like a polka dot wallpaper — purely decorative!
 class _DotPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p = Paint()..color = Colors.white.withOpacity(0.05);
     const s = 22.0;
+    // Loop across the whole area and draw a small circle every 22 pixels
     for (double x = 0; x < size.width; x += s) {
       for (double y = 0; y < size.height; y += s) {
         canvas.drawCircle(Offset(x, y), 1.5, p);

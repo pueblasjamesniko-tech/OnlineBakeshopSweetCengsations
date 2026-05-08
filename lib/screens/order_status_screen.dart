@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
 
+// This screen explains what each order status means — like a guide or legend.
+// It shows the steps an order goes through from start to finish!
 class OrderStatusScreen extends StatelessWidget {
   const OrderStatusScreen({super.key});
 
+  // A fixed list of all the steps an order can go through.
+  // Think of it like the stages of a race — Pending → Preparing → Ready → Delivered!
   static const List<_StatusStep> _steps = [
     _StatusStep(
       icon: Icons.access_time_rounded,
@@ -97,14 +101,16 @@ class OrderStatusScreen extends StatelessWidget {
             ),
           ),
 
-          //Steps
+          // The scrollable list of status steps shown below the header
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
               child: Column(
+                // Loop through each step and build a row for it
                 children: List.generate(_steps.length, (i) {
                   final step = _steps[i];
                   final isLast = i == _steps.length - 1;
+                  // Check if this is the last step so we don't draw a line after it
 
                   return Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -131,6 +137,8 @@ class OrderStatusScreen extends StatelessWidget {
                               ),
                             ),
                           ),
+                          // Vertical line connecting this step to the next one.
+                          // Not drawn after the last step since there's nothing below it.
                           if (!isLast)
                             Container(
                               width: 2.5,
@@ -153,13 +161,14 @@ class OrderStatusScreen extends StatelessWidget {
 
                       const SizedBox(width: 18),
 
-                      //Right: label + description
+                      // Right side: the step label badge and description text
                       Expanded(
                         child: Padding(
                           padding: const EdgeInsets.only(top: 10),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              // Colored pill badge showing the step name (e.g. "Pending")
                               Container(
                                 padding: const EdgeInsets.symmetric(
                                     horizontal: 12, vertical: 5),
@@ -203,6 +212,8 @@ class OrderStatusScreen extends StatelessWidget {
   }
 }
 
+// A simple data class (like a blueprint) that holds the info for one status step.
+// Each step has an icon, a name, a description, and a color.
 class _StatusStep {
   final IconData icon;
   final String label;

@@ -1,3 +1,4 @@
+// Stores all the info about a logged-in user
 class UserModel {
   final String id;
   final String name;
@@ -11,6 +12,7 @@ class UserModel {
   final List<String> savedAddresses;
   final String? phone;
 
+  // Creates a user — id, name, and email are required, the rest are optional
   const UserModel({
     required this.id,
     required this.name,
@@ -45,6 +47,7 @@ class UserModel {
     );
   }
 
+  // Turns the user into a JSON map (e.g. to send to an API)
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -60,7 +63,7 @@ class UserModel {
   String get firstName => name.split(' ').first;
 }
 
-// ── OrderModel ────────────────────────────────────────────────────────────────
+// Stores all the info about a single order
 class OrderModel {
   final String id;
   final String status; // e.g. 'Delivered', 'Pending', 'Processing'
@@ -68,6 +71,7 @@ class OrderModel {
   final DateTime orderedAt;
   final List<String> itemNames;
 
+  // Creates an order — all fields are required except itemNames
   const OrderModel({
     required this.id,
     required this.status,
@@ -76,6 +80,7 @@ class OrderModel {
     this.itemNames = const [],
   });
 
+  // Builds an order from a JSON map (e.g. from an API response)
   factory OrderModel.fromJson(Map<String, dynamic> json) {
     return OrderModel(
       id: json['id']?.toString() ?? '',
@@ -90,6 +95,7 @@ class OrderModel {
     );
   }
 
+  // Returns an emoji that matches the order status
   String get statusEmoji {
     switch (status.toLowerCase()) {
       case 'delivered':

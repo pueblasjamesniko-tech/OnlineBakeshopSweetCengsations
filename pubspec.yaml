@@ -14,17 +14,18 @@ dependencies:
   http: ^1.1.0
   shared_preferences: ^2.2.2
   cupertino_icons: ^1.0.6
+  image_picker: ^1.1.2
+  firebase_core: ^3.6.0
+  firebase_messaging: ^15.1.3
   
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
-  image_picker: ^1.1.2
 
 flutter:
   uses-material-design: true
-
-  
   assets:
     - assets/images/bakeshop_logo.jpg
+    - assets/images/gcash_qr.jpg
